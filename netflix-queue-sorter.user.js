@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 1.2, 2008-11-06
+// Version 1.3, 2008-11-06
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://tenhanna.com/greasemonkey
 // @author      Maarten
-// @version     1.2
-// @description v1.2: Sort your Netflix queue by movie title, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
+// @version     1.3
+// @description v1.3: Sort your Netflix queue by movie title, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
 // @include     http://www.netflix.com/Queue*
 // ==/UserScript==
 //
@@ -385,11 +385,6 @@ var NetflixQueueSorter = (function() {
         // TODO: fix position of series discs.
 
         var sortFn = function(a, b) {
-            // "Now" should always be at end.
-            // The value 10 below catches all of "", "Now", "<em></em>".
-            if (a.avail.length < 10) return -1;
-            if (b.avail.length < 10) return 1;
-
             // DVD Queue: "To be released" should always be on top.
             if (a.avail.indexOf('RELEASES') >= 0
                     && b.avail.indexOf('RELEASES') >= 0) {
@@ -432,7 +427,7 @@ var NetflixQueueSorter = (function() {
             if (b.avail.indexOf('SHORT') >= 0) return -1;
 
             // All other cases.
-            return a.avail > b.avail ? -1 : 1;
+            return 1;   // Keeps rest of items in current order.
         }
         _sortInfo.sort(sortFn);
 
