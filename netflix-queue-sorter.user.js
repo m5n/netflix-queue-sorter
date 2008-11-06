@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 1.1, 2008-11-01
+// Version 1.2, 2008-11-06
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://tenhanna.com/greasemonkey
 // @author      Maarten
-// @version     1.1
-// @description v1.1: Randomize or sort your queue by movie title, genre, star rating or average rating.
+// @version     1.2
+// @description v1.2: Sort your Netflix queue by movie title, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
 // @include     http://www.netflix.com/Queue*
 // ==/UserScript==
 //
@@ -22,9 +22,10 @@
 //
 ///////////////////////////////////////////////////////////////////////////////
 //
-// This script allows you to randomize or sort your DVD or Instant Queue by
-// movie title, genre, star rating (that is: suggested rating or user rating)
-// or average rating.
+// This script allows you to shuffle (that is: randomize), reverse, or sort
+// your DVD or Instant Queue by movie title, genre, star rating (that is:
+// suggested rating or user rating), average rating, availability, or
+// playability.
 //
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -50,23 +51,32 @@ var NetflixQueueSorter = (function() {
         for (var ii = 0; ii < children.length; ii++) {
             if (children[ii].tagName == "TH") {
                 if (children[ii].className == "prmt") {
-                    _addRandomizeOption(children[ii]);
+                    _addOrderSortOption(children[ii]);
                 } else if (children[ii].className == "tt") {
                     _addTitleSortOption(children[ii]);
+                } else if (document.URL.indexOf('ELECTRONIC') < 0
+                        && children[ii].className == "wn") {
+                    _addInstantSortOption(children[ii]);
                 } else if (children[ii].className == "st") {
                     _addStarSortOption(children[ii]);
                 } else if (children[ii].className == "gn") {
                     _addGenreSortOption(children[ii]);
+                } else if (children[ii].className == "av") {
+                    _addAvailabilitySortOption(children[ii]);
                 }
             }
         }
     }
 
-    function _addRandomizeOption(header) {
+    function _addOrderSortOption(header) {
         _addOptions(header, [
             {
-                'sort': 'randomize',
-                'label': 'Randomize'
+                'sort': 'shuffle',
+                'label': 'Shuffle'
+            },
+            {
+                'sort': 'reverse',
+                'label': 'Reverse'
             }
         ]);
     }
@@ -76,6 +86,15 @@ var NetflixQueueSorter = (function() {
             {
                 'sort': 'title',
                 'label': 'Sort by Title'
+            }
+        ]);
+    }
+
+    function _addInstantSortOption(header) {
+        _addOptions(header, [
+            {
+                'sort': 'playable',
+                'label': 'Sort'
             }
         ]);
     }
@@ -98,6 +117,15 @@ var NetflixQueueSorter = (function() {
             {
                 'sort': 'genre',
                 'label': 'Sort by Genre'
+            }
+        ]);
+    }
+
+    function _addAvailabilitySortOption(header) {
+        _addOptions(header, [
+            {
+                'sort': 'availability',
+                'label': 'Sort by Availability'
             }
         ]);
     }
@@ -150,11 +178,17 @@ var NetflixQueueSorter = (function() {
         // Let GUI redraw buttons.
         var delayed = function() {
             switch(evt.target.value) {
-                case 'randomize':
-                    _randomize();
+                case 'reverse':
+                    _reverse();
+                    break;
+                case 'shuffle':
+                    _shuffle();
                     break;
                 case 'title':
                     _sortByTitle();
+                    break;
+                case 'playable':
+                    _sortByPlayability();
                     break;
                 case 'usrRating':
                     _sortByRating(false);
@@ -165,35 +199,59 @@ var NetflixQueueSorter = (function() {
                 case 'genre':
                     _sortByGenre();
                     break;
+                case 'availability':
+                    _sortByAvailability();
+                    break;
             }
         }
         setTimeout(delayed, 0);
     }
 
-    function _randomize() {
+    function _reverse() {
         var elts = document.getElementsByClassName('o');
 
-        // Generate a list of random positions.
-        var avail = [];
-        for (var idx = 0; idx < elts.length; idx++) {
-            avail.push(idx);
-        }
+        var maxIdx = Math.floor(elts.length / 2);
+        for (var idx = 0; idx < maxIdx; idx++) {
+            var otherIdx = elts.length - idx - 1;
 
-        for (var idx = 0; idx < elts.length; idx++) {
-            // Generate number between 0 and avail.length - 1.
-            // Math.random() generates a number between 0 (incl) and 1 (excl).
-            var availIdx = Math.floor(Math.random() * avail.length);
-            elts[idx].value = avail[availIdx];
-            
-            // Remove used position from availability array.
-            avail.splice(availIdx, 1);
+            // Swap the values.
+            var tmp = elts[otherIdx].value;
+            elts[otherIdx].value = elts[idx].value;
+            elts[idx].value = tmp;
         }
 
         _done(true, elts[0]);
 
         // Inform the user that sort has finished and what the next steps are.
         var elt = document.getElementById('updateQueue1');
-        alert("Randomize completed.  Now press the " + elt.alt
+        alert("Reversal completed.  Now press the " + elt.alt
+                + " button to save it.");
+    }
+
+    function _shuffle() {
+        var elts = document.getElementsByClassName('o');
+
+        // Generate a list of random positions.
+        var slots = [];
+        for (var idx = 0; idx < elts.length; idx++) {
+            slots.push(idx);
+        }
+
+        for (var idx = 0; idx < elts.length; idx++) {
+            // Generate number between 0 and slots.length - 1.
+            // Math.random() generates a number between 0 (incl) and 1 (excl).
+            var slotsIdx = Math.floor(Math.random() * slots.length);
+            elts[idx].value = slots[slotsIdx];
+            
+            // Remove used position from slots array.
+            slots.splice(slotsIdx, 1);
+        }
+
+        _done(true, elts[0]);
+
+        // Inform the user that sort has finished and what the next steps are.
+        var elt = document.getElementById('updateQueue1');
+        alert("Shuffle completed.  Now press the " + elt.alt
                 + " button to save it.");
     }
 
@@ -222,6 +280,44 @@ var NetflixQueueSorter = (function() {
         _sortInfo.sort(sortFn);
 
         _setOrder("origPos", elts);
+    }
+
+    function _sortByPlayability() {
+        _sortInfo = [];
+
+        // Don't take the whole document.body.innerHTML as text.
+        // Luckily there's a div containing just the items we need.
+        var text = document.getElementById('qbody').innerHTML;
+
+        var pos = 1;
+
+        // In JavaScript, "everything until and including a newline" is
+        // represented as the expression "(?:.*?\n)*?".  So that matches
+        // wherever you are in the string until the end-of-line, and any
+        // lines underneath it.  To continue matching on another line,
+        // skip into the line first using ".*?".
+        var regex = /name="OR(\d+)"(?:.*?\n)*?.*?class="wn">(.*?)<\/td/g;
+        while (regex.test(text)) {
+            var id = RegExp.$1;
+            var playable = RegExp.$2.length != 0;
+            var record = {
+                    "id": id,
+                    "play": playable,
+                    "origPos": pos++
+            };
+            _sortInfo.push(record);
+        }
+
+        // TODO: fix position of series discs.
+
+        var sortFn = function(a, b) {
+            if (a.play) return 1;
+            if (b.play) return -1;
+            return 1;   // Keeps non-playable items in current order.
+        }
+        _sortInfo.sort(sortFn);
+
+        _setOrder("origPos");
     }
 
     function _sortByGenre() {
@@ -254,6 +350,89 @@ var NetflixQueueSorter = (function() {
 
         var sortFn = function(a, b) {
             return a.genre > b.genre ? -1 : 1;
+        }
+        _sortInfo.sort(sortFn);
+
+        _setOrder("origPos");
+    }
+
+    function _sortByAvailability() {
+        _sortInfo = [];
+
+        // Don't take the whole document.body.innerHTML as text.
+        // Luckily there's a div containing just the items we need.
+        var text = document.getElementById('qbody').innerHTML;
+
+        var pos = 1;
+
+        // In JavaScript, "everything until and including a newline" is
+        // represented as the expression "(?:.*?\n)*?".  So that matches
+        // wherever you are in the string until the end-of-line, and any
+        // lines underneath it.  To continue matching on another line,
+        // skip into the line first using ".*?".
+        var regex = /name="OR(\d+)"(?:.*?\n)*?.*?class="av">(.*?)<\/td/g;
+        while (regex.test(text)) {
+            var id = RegExp.$1;
+            var avail = RegExp.$2;
+            var record = {
+                    "id": id,
+                    "avail": avail.toUpperCase(),
+                    "origPos": pos++
+            };
+            _sortInfo.push(record);
+        }
+
+        // TODO: fix position of series discs.
+
+        var sortFn = function(a, b) {
+            // "Now" should always be at end.
+            // The value 10 below catches all of "", "Now", "<em></em>".
+            if (a.avail.length < 10) return -1;
+            if (b.avail.length < 10) return 1;
+
+            // DVD Queue: "To be released" should always be on top.
+            if (a.avail.indexOf('RELEASES') >= 0
+                    && b.avail.indexOf('RELEASES') >= 0) {
+                // Sort by date.
+
+                / (.*?)</.test(a.avail);
+                var dateA = new Date(RegExp.$1);
+
+                / (.*?)</.test(b.avail);
+                var dateB = new Date(RegExp.$1);
+
+                return dateA.getTime() > dateB.getTime() ? -1 : 1;
+            }
+            if (a.avail.indexOf('RELEASES') >= 0) return 1;
+            if (b.avail.indexOf('RELEASES') >= 0) return -1;
+
+            // Instant Queue: "Available until" should always be on top.
+            // 
+            if (a.avail.indexOf('UNTIL') >= 0
+                    && b.avail.indexOf('UNTIL') >= 0) {
+                // Sort by date.
+
+                / (.*?)</.test(a.avail);
+                var dateA = new Date(RegExp.$1);
+
+                / (.*?)</.test(b.avail);
+                var dateB = new Date(RegExp.$1);
+
+                return dateA.getTime() > dateB.getTime() ? -1 : 1;
+            }
+            if (a.avail.indexOf('UNTIL') >= 0) return 1;
+            if (b.avail.indexOf('UNTIL') >= 0) return -1;
+
+            // Order "wait" as follows: Very Long, Long, Short.
+            if (a.avail.indexOf('VERY') >= 0) return 1;
+            if (b.avail.indexOf('VERY') >= 0) return -1;
+            if (a.avail.indexOf('LONG') >= 0) return 1;
+            if (b.avail.indexOf('LONG') >= 0) return -1;
+            if (a.avail.indexOf('SHORT') >= 0) return 1;
+            if (b.avail.indexOf('SHORT') >= 0) return -1;
+
+            // All other cases.
+            return a.avail > b.avail ? -1 : 1;
         }
         _sortInfo.sort(sortFn);
 
