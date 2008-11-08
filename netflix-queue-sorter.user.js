@@ -3,16 +3,16 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 1.3, 2008-11-06
+// Version 1.4, 2008-11-08
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
 // ==UserScript==
 // @name        Netflix Queue Sorter
-// @namespace   http://tenhanna.com/greasemonkey
+// @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     1.3
-// @description v1.3: Sort your Netflix queue by movie title, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
+// @version     1.4
+// @description v1.4: Sort your Netflix queue by movie title, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
 // @include     http://www.netflix.com/Queue*
 // ==/UserScript==
 //
@@ -456,11 +456,12 @@ var NetflixQueueSorter = (function() {
             var movieInfo = RegExp.$2;
 
             // Check if non-series disc, or first-in-series disc.
-            var regex2 = /OR(\d+)(?:.*?\n)*?.*?width:(.*?)px.*?>(.*?)</;
+            var regex2 = /OR(\d+)(?:.*?\n)*?.*?class="tt".*?<a.*?>(.*?)<\/a>(?:.*?\n)*?.*?width:(.*?)px.*?>(.*?)</;
             if (regex2.test(movieInfo)) {
                 var id = RegExp.$1;
-                var usrRating = RegExp.$2 / 95 * 5;   // mask of 95px is 5 stars
-                var avgRatingText = RegExp.$3;
+                var title = RegExp.$2;
+                var usrRating = RegExp.$3 / 95 * 5;   // mask of 95px is 5 stars
+                var avgRatingText = RegExp.$4;
 
                 // Not all movies have avg rating (e.g. 70057842),
                 // and user-rated movies don't have their avg rating listed.
@@ -473,6 +474,7 @@ var NetflixQueueSorter = (function() {
 
                 var record = {
                     "id": id,
+                    "title": title,
                     "usrRating": usrRating,
                     "avgRating": avgRating,
                     "origPos": pos++
@@ -516,12 +518,14 @@ var NetflixQueueSorter = (function() {
                     return;
                 }
 
-                regex2 = /OR(\d+)/;
+                regex2 = /OR(\d+)(?:.*?\n)*?.*?class="tt".*?<a.*?>(.*?)<\/a>/;
                 if (regex2.test(movieInfo)) {
                     var id = RegExp.$1;
+                    var title = RegExp.$2;
 
                     var record = {
                         "id": id,
+                        "title": title,
                         "link": linkId,
                         "origPos": pos++
                     };
@@ -644,6 +648,9 @@ var NetflixQueueSorter = (function() {
 
     function _doActualSort(algorithm) {
         var sortFn = function(a, b) {
+            if (a[algorithm] == b[algorithm]) {
+                return a.title > b.title ? -1 : 1;
+            }
             return a[algorithm] > b[algorithm] ? 1 : -1;
         }
         _sortInfo.sort(sortFn);
