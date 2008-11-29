@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 1.4, 2008-11-08
+// Version 1.5, 2008-11-29
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     1.4
-// @description v1.4: Sort your Netflix queue by movie title, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
+// @version     1.5
+// @description v1.5: Sort your Netflix queue by movie title, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
 // @include     http://www.netflix.com/Queue*
 // ==/UserScript==
 //
@@ -407,10 +407,10 @@ var NetflixQueueSorter = (function() {
                     && b.avail.indexOf('UNTIL') >= 0) {
                 // Sort by date.
 
-                / (.*?)</.test(a.avail);
+                />.*?>(.*?)</.test(a.avail);
                 var dateA = new Date(RegExp.$1);
 
-                / (.*?)</.test(b.avail);
+                />.*?>(.*?)</.test(b.avail);
                 var dateB = new Date(RegExp.$1);
 
                 return dateA.getTime() > dateB.getTime() ? -1 : 1;
