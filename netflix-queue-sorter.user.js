@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 1.5, 2008-11-29
+// Version 1.6, 2009-01-31
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     1.5
-// @description v1.5: Sort your Netflix queue by movie title, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
+// @version     1.6
+// @description v1.6: Sort your Netflix queue by movie title, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
 // @include     http://www.netflix.com/Queue*
 // ==/UserScript==
 //
@@ -37,6 +37,7 @@ var NetflixQueueSorter = (function() {
     var _sortButtons = [];
     var _sortInfo = [];
     var _getQueue = [];
+    var _totalQueueCount = 0;
     var _seriesLookup = {};
     var XHR_DELAY = 500;
 
@@ -54,8 +55,8 @@ var NetflixQueueSorter = (function() {
                     _addOrderSortOption(children[ii]);
                 } else if (children[ii].className == "tt") {
                     _addTitleSortOption(children[ii]);
-                } else if (document.URL.indexOf('ELECTRONIC') < 0
-                        && children[ii].className == "wn") {
+                } else if (document.URL.indexOf('ELECTRONIC') < 0 &&
+                        children[ii].className == "wn") {
                     _addInstantSortOption(children[ii]);
                 } else if (children[ii].className == "st") {
                     _addStarSortOption(children[ii]);
@@ -102,6 +103,9 @@ var NetflixQueueSorter = (function() {
     function _addStarSortOption(header) {
         _addOptions(header, [
             {
+                'isProgress': true 
+            },
+            {
                 'sort': 'usrRating',
                 'label': 'Sort by Star Rating'
             },
@@ -130,14 +134,27 @@ var NetflixQueueSorter = (function() {
         ]);
     }
 
+    function _setProgressStatus(id, msg) {
+        var elt = document.getElementById('gm_progress_' + id);
+        if (elt) {
+            elt.innerHTML = msg;
+        }
+    }
+
     function _addOptions(header, options) {
         var div = document.createElement('div');
 
         for (var idx in options) {
-            var buttonInfo = _createSortButton(
-                    options[idx].sort, options[idx].label, _reorderQueue);
-            _sortButtons.push(buttonInfo);
-            div.appendChild(buttonInfo.button);
+            if (options[idx].isProgress) {
+                var span = document.createElement('span');
+                span.setAttribute('id', 'gm_progress_' + header.className);
+                div.appendChild(span);
+            } else {
+                var buttonInfo = _createSortButton(
+                        options[idx].sort, options[idx].label, _reorderQueue);
+                _sortButtons.push(buttonInfo);
+                div.appendChild(buttonInfo.button);
+            }
             div.appendChild(document.createElement('br'));
         }
         div.appendChild(document.createElement('br'));
@@ -203,7 +220,7 @@ var NetflixQueueSorter = (function() {
                     _sortByAvailability();
                     break;
             }
-        }
+        };
         setTimeout(delayed, 0);
     }
 
@@ -224,20 +241,21 @@ var NetflixQueueSorter = (function() {
 
         // Inform the user that sort has finished and what the next steps are.
         var elt = document.getElementById('updateQueue1');
-        alert("Reversal completed.  Now press the " + elt.alt
-                + " button to save it.");
+        alert("Reversal completed.  Now press the " + elt.alt +
+                " button to save it.");
     }
 
     function _shuffle() {
+        var idx;
         var elts = document.getElementsByClassName('o');
 
         // Generate a list of random positions.
         var slots = [];
-        for (var idx = 0; idx < elts.length; idx++) {
+        for (idx = 0; idx < elts.length; idx++) {
             slots.push(idx);
         }
 
-        for (var idx = 0; idx < elts.length; idx++) {
+        for (idx = 0; idx < elts.length; idx++) {
             // Generate number between 0 and slots.length - 1.
             // Math.random() generates a number between 0 (incl) and 1 (excl).
             var slotsIdx = Math.floor(Math.random() * slots.length);
@@ -251,8 +269,8 @@ var NetflixQueueSorter = (function() {
 
         // Inform the user that sort has finished and what the next steps are.
         var elt = document.getElementById('updateQueue1');
-        alert("Shuffle completed.  Now press the " + elt.alt
-                + " button to save it.");
+        alert("Shuffle completed.  Now press the " + elt.alt +
+                " button to save it.");
     }
 
     function _sortByTitle() {
@@ -276,7 +294,7 @@ var NetflixQueueSorter = (function() {
 
         var sortFn = function(a, b) {
             return a.title > b.title ? -1 : 1;
-        }
+        };
         _sortInfo.sort(sortFn);
 
         _setOrder("origPos", elts);
@@ -299,7 +317,7 @@ var NetflixQueueSorter = (function() {
         var regex = /name="OR(\d+)"(?:.*?\n)*?.*?class="wn">(.*?)<\/td/g;
         while (regex.test(text)) {
             var id = RegExp.$1;
-            var playable = RegExp.$2.length != 0;
+            var playable = RegExp.$2.length !== 0;
             var record = {
                     "id": id,
                     "play": playable,
@@ -311,10 +329,14 @@ var NetflixQueueSorter = (function() {
         // TODO: fix position of series discs.
 
         var sortFn = function(a, b) {
-            if (a.play) return 1;
-            if (b.play) return -1;
+            if (a.play) {
+                return 1;
+            }
+            if (b.play) {
+                return -1;
+            }
             return 1;   // Keeps non-playable items in current order.
-        }
+        };
         _sortInfo.sort(sortFn);
 
         _setOrder("origPos");
@@ -350,7 +372,7 @@ var NetflixQueueSorter = (function() {
 
         var sortFn = function(a, b) {
             return a.genre > b.genre ? -1 : 1;
-        }
+        };
         _sortInfo.sort(sortFn);
 
         _setOrder("origPos");
@@ -385,56 +407,116 @@ var NetflixQueueSorter = (function() {
         // TODO: fix position of series discs.
 
         var sortFn = function(a, b) {
+            var dateA, dateB;
+
             // DVD Queue: "To be released" should always be on top.
-            if (a.avail.indexOf('RELEASES') >= 0
-                    && b.avail.indexOf('RELEASES') >= 0) {
+            if (a.avail.indexOf('RELEASES') >= 0 &&
+                    b.avail.indexOf('RELEASES') >= 0) {
                 // Sort by date.
 
                 / (.*?)</.test(a.avail);
-                var dateA = new Date(RegExp.$1);
+                dateA = new Date(RegExp.$1);
 
                 / (.*?)</.test(b.avail);
-                var dateB = new Date(RegExp.$1);
+                dateB = new Date(RegExp.$1);
 
                 return dateA.getTime() > dateB.getTime() ? -1 : 1;
             }
-            if (a.avail.indexOf('RELEASES') >= 0) return 1;
-            if (b.avail.indexOf('RELEASES') >= 0) return -1;
+            if (a.avail.indexOf('RELEASES') >= 0) {
+                return 1;
+            }
+            if (b.avail.indexOf('RELEASES') >= 0) {
+                return -1;
+            }
 
             // Instant Queue: "Available until" should always be on top.
             // 
-            if (a.avail.indexOf('UNTIL') >= 0
-                    && b.avail.indexOf('UNTIL') >= 0) {
+            if (a.avail.indexOf('UNTIL') >= 0 &&
+                    b.avail.indexOf('UNTIL') >= 0) {
                 // Sort by date.
 
                 />.*?>(.*?)</.test(a.avail);
-                var dateA = new Date(RegExp.$1);
+                dateA = new Date(RegExp.$1);
 
                 />.*?>(.*?)</.test(b.avail);
-                var dateB = new Date(RegExp.$1);
+                dateB = new Date(RegExp.$1);
 
                 return dateA.getTime() > dateB.getTime() ? -1 : 1;
             }
-            if (a.avail.indexOf('UNTIL') >= 0) return 1;
-            if (b.avail.indexOf('UNTIL') >= 0) return -1;
+            if (a.avail.indexOf('UNTIL') >= 0) {
+                return 1;
+            }
+            if (b.avail.indexOf('UNTIL') >= 0) {
+                return -1;
+            }
 
             // Order "wait" as follows: Very Long, Long, Short.
-            if (a.avail.indexOf('VERY') >= 0) return 1;
-            if (b.avail.indexOf('VERY') >= 0) return -1;
-            if (a.avail.indexOf('LONG') >= 0) return 1;
-            if (b.avail.indexOf('LONG') >= 0) return -1;
-            if (a.avail.indexOf('SHORT') >= 0) return 1;
-            if (b.avail.indexOf('SHORT') >= 0) return -1;
+            if (a.avail.indexOf('VERY') >= 0) {
+                return 1;
+            }
+            if (b.avail.indexOf('VERY') >= 0) {
+                return -1;
+            }
+            if (a.avail.indexOf('LONG') >= 0) {
+                return 1;
+            }
+            if (b.avail.indexOf('LONG') >= 0) {
+                return -1;
+            }
+            if (a.avail.indexOf('SHORT') >= 0) {
+                return 1;
+            }
+            if (b.avail.indexOf('SHORT') >= 0) {
+                return -1;
+            }
 
             // All other cases.
             return 1;   // Keeps rest of items in current order.
-        }
+        };
         _sortInfo.sort(sortFn);
 
         _setOrder("origPos");
     }
 
+    function _matchForNetflixRatingGranulizer(pos, seriesInfo, movieInfo) {
+        var regex2 = /OR(\d+)(?:.*?\n)*?.*?class="tt".*?<a.*?>(.*?)<\/a>(?:.*?\n)*?.*?stars_.*?_(.*?).gif.*?>(.*?)</;
+        if (regex2.test(movieInfo)) {
+            id = RegExp.$1;
+            title = RegExp.$2;
+            var usrRating = RegExp.$3 / 10;   // The img tag has rating * 10.
+
+            // The average rating is never there. Will handle this later.
+            var avgRating = '';
+
+            record = {
+                "id": id,
+                "title": title,
+                "usrRating": usrRating,
+                "avgRating": avgRating,
+                "origPos": pos++
+            };
+            _sortInfo.push(record);
+
+            // Check if series disc.
+            regex2 = /series="(\d+)"/;
+            if (regex2.test(seriesInfo)) {
+                linkId = RegExp.$1;
+
+                // Don't add "link" key to record, as we're filtering 
+                // on that later.
+
+                _seriesLookup[linkId] = record;
+            }
+            // Else it was a non-series movie.  No problem.
+
+            return true;
+        }
+        return false;
+    }
+
     function _sortByRating(sortByAvgRating) {
+        var id, linkId, pos, record, title;
+
         _sortInfo = [];
 
         _seriesLookup = {};
@@ -443,7 +525,7 @@ var NetflixQueueSorter = (function() {
         // Luckily there's a div containing just the items we need.
         var text = document.getElementById('qbody').innerHTML;
 
-        var pos = 1;
+        pos = 1;
 
         // In JavaScript, "everything until and including a newline" is
         // represented as the expression "(?:.*?\n)*?".  So that matches
@@ -456,10 +538,19 @@ var NetflixQueueSorter = (function() {
             var movieInfo = RegExp.$2;
 
             // Check if non-series disc, or first-in-series disc.
+            // Users that have the Netflix Rating Granulizer script installed
+            // will have different markup, so need to check that first.
+            if (_matchForNetflixRatingGranulizer(pos, seriesInfo, movieInfo)) {
+                // Yes, user also has the NRG script installed.
+                pos++;
+                continue;
+            }
+            // Now we know there's no altered markup, so deal with standard
+            // Netflix markup.
             var regex2 = /OR(\d+)(?:.*?\n)*?.*?class="tt".*?<a.*?>(.*?)<\/a>(?:.*?\n)*?.*?width:(.*?)px.*?>(.*?)</;
             if (regex2.test(movieInfo)) {
-                var id = RegExp.$1;
-                var title = RegExp.$2;
+                id = RegExp.$1;
+                title = RegExp.$2;
                 var usrRating = RegExp.$3 / 95 * 5;   // mask of 95px is 5 stars
                 var avgRatingText = RegExp.$4;
 
@@ -472,7 +563,7 @@ var NetflixQueueSorter = (function() {
                 }
                 // Else missing average rating. Will handle this later.
 
-                var record = {
+                record = {
                     "id": id,
                     "title": title,
                     "usrRating": usrRating,
@@ -484,7 +575,7 @@ var NetflixQueueSorter = (function() {
                 // Check if series disc.
                 regex2 = /series="(\d+)"/;
                 if (regex2.test(seriesInfo)) {
-                    var linkId = RegExp.$1;
+                    linkId = RegExp.$1;
 
                     // Don't add "link" key to record, as we're filtering 
                     // on that later.
@@ -493,8 +584,6 @@ var NetflixQueueSorter = (function() {
                 }
                 // Else it was a non-series movie.  No problem.
             } else {
-                var linkId;
-
                 // Check if series disc.
                 regex2 = /series="(\d+)"/;
                 if (regex2.test(seriesInfo)) {
@@ -520,10 +609,10 @@ var NetflixQueueSorter = (function() {
 
                 regex2 = /OR(\d+)(?:.*?\n)*?.*?class="tt".*?<a.*?>(.*?)<\/a>/;
                 if (regex2.test(movieInfo)) {
-                    var id = RegExp.$1;
-                    var title = RegExp.$2;
+                    id = RegExp.$1;
+                    title = RegExp.$2;
 
-                    var record = {
+                    record = {
                         "id": id,
                         "title": title,
                         "link": linkId,
@@ -547,7 +636,7 @@ var NetflixQueueSorter = (function() {
         var algorithm = sortByAvgRating ? "avgRating" : "usrRating";
 
         // Make sure all movies have the rating that is being sorted on.
-        for (var pos = 0, len = _sortInfo.length; pos < len; pos++) {
+        for (pos = 0, len = _sortInfo.length; pos < len; pos++) {
             // Only do this for non-links.
             if (!_sortInfo[pos].link) {
                 if (!_sortInfo[pos][algorithm]) {
@@ -555,7 +644,8 @@ var NetflixQueueSorter = (function() {
                 }
             }
         }
-        if (0 != _getQueue.length) {
+        _totalQueueCount = _getQueue.length;
+        if (0 !== _getQueue.length) {
             _fixRatings(false, algorithm);
         } else {
             _checkSeriesLinks(algorithm);
@@ -571,6 +661,15 @@ var NetflixQueueSorter = (function() {
                     'FixLinks: ' + fixLinks + '\nAlgorithm: ' + algorithm);
             _done(false);
             return;
+        }
+
+        // Update progress.
+        var txt = fixLinks ? 'series' : 'movie';
+        if (0 !== _getQueue.length) {
+            var pct = ((1 - _getQueue.length / _totalQueueCount) * 100).toFixed(0);
+            _setProgressStatus('st', 'Getting ' + txt + ' info: ' + pct + '%');
+        } else {
+            _setProgressStatus('st', 'Getting ' + txt + ' info: 100%');
         }
 
         var id = fixLinks ? record.link : record.id;
@@ -598,8 +697,8 @@ var NetflixQueueSorter = (function() {
         } 
         // Else no match... use high default values.
 
-        record["usrRating"] = usrRating;
-        record["avgRating"] = avgRating;
+        record.usrRating = usrRating;
+        record.avgRating = avgRating;
         if (fixLinks) {
             var linkId = record.link;
             record = {
@@ -609,16 +708,17 @@ var NetflixQueueSorter = (function() {
             _seriesLookup[linkId] = record;
         }
 
-        if (0 == _getQueue.length) {
+        var delayed;
+        if (0 === _getQueue.length) {
             // Processed all items in getQueue; on to next step.
             if (fixLinks) {
                 _doActualSort(algorithm);
             } else {
-                var delayed = function() { _checkSeriesLinks(algorithm); };
+                delayed = function() { _checkSeriesLinks(algorithm); };
                 setTimeout(delayed, XHR_DELAY);
             }
         } else {
-            var delayed = function() { _fixRatings(fixLinks, algorithm); };
+            delayed = function() { _fixRatings(fixLinks, algorithm); };
             setTimeout(delayed, XHR_DELAY);
         }
     }
@@ -632,14 +732,15 @@ var NetflixQueueSorter = (function() {
             if (linkId) {
                 var record = _seriesLookup[linkId];
                 if (record) {
-                    _sortInfo[pos]["usrRating"] = record["usrRating"];
-                    _sortInfo[pos]["avgRating"] = record["avgRating"];
+                    _sortInfo[pos].usrRating = record.usrRating;
+                    _sortInfo[pos].avgRating = record.avgRating;
                 } else {
                     _getQueue.push(_sortInfo[pos]);
                 }
             }
         }
-        if (0 != _getQueue.length) {
+        _totalQueueCount = _getQueue.length;
+        if (0 !== _getQueue.length) {
             _fixRatings(true, algorithm);
         } else {
             _doActualSort(algorithm);
@@ -652,34 +753,37 @@ var NetflixQueueSorter = (function() {
                 return a.title > b.title ? -1 : 1;
             }
             return a[algorithm] > b[algorithm] ? 1 : -1;
-        }
+        };
         _sortInfo.sort(sortFn);
 
         _setOrder("origPos");
     }
 
     function _setOrder(sortValue, elts) {
-        var elts = elts || document.getElementsByClassName('o');
+        elts = elts || document.getElementsByClassName('o');
 
-        var firstBox, len;
-        for (var pos = 0, len = _sortInfo.length; pos < len; pos++) {
+        var elt, firstBox, len, pos;
+        for (pos = 0, len = _sortInfo.length; pos < len; pos++) {
             // Note: sortValue is 1-based, elts index is 0-based, so sub 1
-            var elt = elts[_sortInfo[pos][sortValue] - 1];
+            elt = elts[_sortInfo[pos][sortValue] - 1];
 
             // Set new value.
             elt.value = _sortInfo.length - pos;
 
-            if (_sortInfo[pos].origPos == 1) {
+            if (_sortInfo[pos].origPos === 1) {
                 firstBox = elt;
             }
         }
 
+        // Clear the status message, since we're done.
+        _setProgressStatus('st', '');
+
         _done(true, firstBox);
 
         // Inform the user that sort has finished and what the next steps are.
-        var elt = document.getElementById('updateQueue1');
-        alert("Sort completed.  Now press the " + elt.alt
-                + " button to save it.");
+        elt = document.getElementById('updateQueue1');
+        alert("Sort completed.  Now press the " + elt.alt +
+                " button to save it.");
      }
 
      function _done(enableUpdateQueueButton, firstBox) {
