@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 1.6, 2009-01-31
+// Version 1.7, 2009-02-26
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     1.6
-// @description v1.6: Sort your Netflix queue by movie title, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
+// @version     1.7
+// @description v1.7: Sort your Netflix queue by movie title, length, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
 // @include     http://www.netflix.com/Queue*
 // ==/UserScript==
 //
@@ -23,54 +23,71 @@
 ///////////////////////////////////////////////////////////////////////////////
 //
 // This script allows you to shuffle (that is: randomize), reverse, or sort
-// your DVD or Instant Queue by movie title, genre, star rating (that is:
-// suggested rating or user rating), average rating, availability, or
+// your DVD or Instant Queue by movie title, length, genre, star rating (that
+// is: suggested rating or user rating), average rating, availability, or
 // playability.
 //
 ///////////////////////////////////////////////////////////////////////////////
 
+// Satisfy JSLint.
+/*global alert, clearTimeout, document, GM_registerMenuCommand, GM_xmlhttpRequest, setTimeout */
+
 // Singleton pattern.
-var NetflixQueueSorter = (function() {
+var NetflixQueueSorter = (function () {
     //
     // Private variables
     //
-    var _sortButtons = [];
-    var _sortInfo = [];
-    var _getQueue = [];
-    var _totalQueueCount = 0;
-    var _seriesLookup = {};
+    var sortButtons = [];
+    var sortInfo = [];
+    var getQueue = [];
+    var totalQueueCount = 0;
+    var seriesLookup = {};
     var XHR_DELAY = 500;
 
     //
     // Private functions
     //
 
-    // This function builds the GUI and adds it to the page body.
-    function _buildGui() {
-        var elt = document.getElementById('inqueue-header-row');
-        var children = elt.childNodes;
-        for (var ii = 0; ii < children.length; ii++) {
-            if (children[ii].tagName == "TH") {
-                if (children[ii].className == "prmt") {
-                    _addOrderSortOption(children[ii]);
-                } else if (children[ii].className == "tt") {
-                    _addTitleSortOption(children[ii]);
-                } else if (document.URL.indexOf('ELECTRONIC') < 0 &&
-                        children[ii].className == "wn") {
-                    _addInstantSortOption(children[ii]);
-                } else if (children[ii].className == "st") {
-                    _addStarSortOption(children[ii]);
-                } else if (children[ii].className == "gn") {
-                    _addGenreSortOption(children[ii]);
-                } else if (children[ii].className == "av") {
-                    _addAvailabilitySortOption(children[ii]);
-                }
-            }
-        }
+    function createSortButton(value, label, onClickFn) {
+        var button = document.createElement('button');
+        button.setAttribute('type', 'button');
+        button.setAttribute('value', value);
+        button.setAttribute('style', 'font-size: smaller');
+        var buttonText = document.createTextNode(label);
+        button.appendChild(buttonText);
+        button.addEventListener('click', onClickFn, true);
+        return {
+            'button': button,
+            'text': buttonText
+        };
     }
 
-    function _addOrderSortOption(header) {
-        _addOptions(header, [
+    function addOptions(header, options) {
+        var div = document.createElement('div');
+
+        for (var idx = 0; idx < options.length; idx++) {
+            if (options[idx].isProgress) {
+                var span = document.createElement('span');
+                span.setAttribute('id', 'gm_progress_' + header.className);
+                span.setAttribute('style', 'padding: 0 0 2px 2px');
+                div.appendChild(span);
+            } else {
+                var buttonInfo = createSortButton(
+                        options[idx].sort, options[idx].label, reorderQueue);
+                sortButtons.push(buttonInfo);
+                div.appendChild(buttonInfo.button);
+            }
+            div.appendChild(document.createElement('br'));
+        }
+        div.appendChild(document.createElement('br'));
+
+        var headerText = header.childNodes[0];
+        header.replaceChild(div, headerText);
+        header.appendChild(headerText);
+    }
+
+    function addOrderSortOption(header) {
+        addOptions(header, [
             {
                 'sort': 'shuffle',
                 'label': 'Shuffle'
@@ -82,17 +99,24 @@ var NetflixQueueSorter = (function() {
         ]);
     }
 
-    function _addTitleSortOption(header) {
-        _addOptions(header, [
+    function addTitleSortOption(header) {
+        addOptions(header, [
+            {
+                'isProgress': true 
+            },
             {
                 'sort': 'title',
                 'label': 'Sort by Title'
+            },
+            {
+                'sort': 'length',
+                'label': 'Sort by Length / Display Length'
             }
         ]);
     }
 
-    function _addInstantSortOption(header) {
-        _addOptions(header, [
+    function addInstantSortOption(header) {
+        addOptions(header, [
             {
                 'sort': 'playable',
                 'label': 'Sort'
@@ -100,8 +124,8 @@ var NetflixQueueSorter = (function() {
         ]);
     }
 
-    function _addStarSortOption(header) {
-        _addOptions(header, [
+    function addStarSortOption(header) {
+        addOptions(header, [
             {
                 'isProgress': true 
             },
@@ -116,8 +140,8 @@ var NetflixQueueSorter = (function() {
         ]);
     }
 
-    function _addGenreSortOption(header) {
-        _addOptions(header, [
+    function addGenreSortOption(header) {
+        addOptions(header, [
             {
                 'sort': 'genre',
                 'label': 'Sort by Genre'
@@ -125,8 +149,8 @@ var NetflixQueueSorter = (function() {
         ]);
     }
 
-    function _addAvailabilitySortOption(header) {
-        _addOptions(header, [
+    function addAvailabilitySortOption(header) {
+        addOptions(header, [
             {
                 'sort': 'availability',
                 'label': 'Sort by Availability'
@@ -134,51 +158,38 @@ var NetflixQueueSorter = (function() {
         ]);
     }
 
-    function _setProgressStatus(id, msg) {
+    // This function builds the GUI and adds it to the page body.
+    function buildGui() {
+        var elt = document.getElementById('inqueue-header-row');
+        var children = elt.childNodes;
+        for (var ii = 0; ii < children.length; ii++) {
+            if (children[ii].tagName === "TH") {
+                if (children[ii].className === "prmt") {
+                    addOrderSortOption(children[ii]);
+                } else if (children[ii].className === "tt") {
+                    addTitleSortOption(children[ii]);
+                } else if (document.URL.indexOf('ELECTRONIC') < 0 &&
+                        children[ii].className === "wn") {
+                    addInstantSortOption(children[ii]);
+                } else if (children[ii].className === "st") {
+                    addStarSortOption(children[ii]);
+                } else if (children[ii].className === "gn") {
+                    addGenreSortOption(children[ii]);
+                } else if (children[ii].className === "av") {
+                    addAvailabilitySortOption(children[ii]);
+                }
+            }
+        }
+    }
+
+    function setProgressStatus(id, msg) {
         var elt = document.getElementById('gm_progress_' + id);
         if (elt) {
             elt.innerHTML = msg;
         }
     }
 
-    function _addOptions(header, options) {
-        var div = document.createElement('div');
-
-        for (var idx in options) {
-            if (options[idx].isProgress) {
-                var span = document.createElement('span');
-                span.setAttribute('id', 'gm_progress_' + header.className);
-                div.appendChild(span);
-            } else {
-                var buttonInfo = _createSortButton(
-                        options[idx].sort, options[idx].label, _reorderQueue);
-                _sortButtons.push(buttonInfo);
-                div.appendChild(buttonInfo.button);
-            }
-            div.appendChild(document.createElement('br'));
-        }
-        div.appendChild(document.createElement('br'));
-
-        var headerText = header.childNodes[0];
-        header.replaceChild(div, headerText);
-        header.appendChild(headerText);
-    }
-
-    function _createSortButton(value, label, onClickFn) {
-        var button = document.createElement('button');
-        button.setAttribute('type', 'button');
-        button.setAttribute('value', value);
-        button.setAttribute('style', 'font-size: smaller');
-        var buttonText = document.createTextNode(label);
-        button.appendChild(buttonText);
-        button.addEventListener('click', onClickFn, true);
-        return {
-            'button': button,
-            'text': buttonText
-        };
-    }
-
-    function _setButtonState(button, enabled) {
+    function setButtonState(button, enabled) {
         if (enabled) {
             button.removeAttribute('disabled');
         } else {
@@ -186,45 +197,68 @@ var NetflixQueueSorter = (function() {
         }
     }
 
-    function _reorderQueue(evt) {
-        // Prevent the user from pressing the buttons again.
-        for (var idx = 0, len = _sortButtons.length; idx < len; idx++) {
-            _setButtonState(_sortButtons[idx].button, false);
+    function done(enableUpdateQueueButton, firstBox) {
+        // Re-enable the sort buttons.
+        for (var idx = 0, len = sortButtons.length; idx < len; idx++) {
+            setButtonState(sortButtons[idx].button, true);
         }
 
-        // Let GUI redraw buttons.
-        var delayed = function() {
-            switch(evt.target.value) {
-                case 'reverse':
-                    _reverse();
-                    break;
-                case 'shuffle':
-                    _shuffle();
-                    break;
-                case 'title':
-                    _sortByTitle();
-                    break;
-                case 'playable':
-                    _sortByPlayability();
-                    break;
-                case 'usrRating':
-                    _sortByRating(false);
-                    break;
-                case 'avgRating':
-                    _sortByRating(true);
-                    break;
-                case 'genre':
-                    _sortByGenre();
-                    break;
-                case 'availability':
-                    _sortByAvailability();
-                    break;
+        // Enable the Update Queue button.
+        if (firstBox) {
+            firstBox.focus();   // This will enable the button.
+            firstBox.blur();   // Don't interfere with keyboard navigation.
+
+            // The focus() above will also color the row, so remove that.
+            // (Either color all changed rows (see v1.0), or none.)
+            var row = document.getElementById('firstqitem');
+            if (row) {
+                row.className = row.className.replace('bgreorder', '');
             }
-        };
-        setTimeout(delayed, 0);
+        }
     }
 
-    function _reverse() {
+    function setOrder(sortValue, elts) {
+        elts = elts || document.getElementsByClassName('o');
+
+        var elt, firstBox, len, pos;
+        for (pos = 0, len = sortInfo.length; pos < len; pos++) {
+            // Note: sortValue is 1-based, elts index is 0-based, so sub 1
+            elt = elts[sortInfo[pos][sortValue] - 1];
+
+            // Set new value.
+            elt.value = sortInfo.length - pos;
+
+            if (sortInfo[pos].origPos === 1) {
+                firstBox = elt;
+            }
+        }
+
+        // Clear the status message, since we're done.
+        setProgressStatus('tt', '');
+        setProgressStatus('st', '');
+
+        done(true, firstBox);
+
+        // Inform the user that sort has finished and what the next steps are.
+        elt = document.getElementById('updateQueue1');
+        alert("Sort completed.  Now press the " + elt.alt +
+                " button to save it.");
+    }
+
+    function doActualSort(algorithm) {
+        var sortFn = function (a, b) {
+            if (a[algorithm] === b[algorithm]) {
+                return a.title > b.title ? -1 : 1;
+            }
+            return a[algorithm] > b[algorithm] ? 1 : -1;
+        };
+        sortInfo.sort(sortFn);
+
+        setOrder("origPos");
+    }
+
+    // Return publicly accessible variables and functions.
+    function reverse() {
         var elts = document.getElementsByClassName('o');
 
         var maxIdx = Math.floor(elts.length / 2);
@@ -237,7 +271,7 @@ var NetflixQueueSorter = (function() {
             elts[idx].value = tmp;
         }
 
-        _done(true, elts[0]);
+        done(true, elts[0]);
 
         // Inform the user that sort has finished and what the next steps are.
         var elt = document.getElementById('updateQueue1');
@@ -245,7 +279,7 @@ var NetflixQueueSorter = (function() {
                 " button to save it.");
     }
 
-    function _shuffle() {
+    function shuffle() {
         var idx;
         var elts = document.getElementsByClassName('o');
 
@@ -263,9 +297,12 @@ var NetflixQueueSorter = (function() {
             
             // Remove used position from slots array.
             slots.splice(slotsIdx, 1);
+            // Note: if splice turns out to be expensive, we could just move
+            // the slotsIdx value to the front of the array and keep a pointer
+            // to the end of the "used" positions.
         }
 
-        _done(true, elts[0]);
+        done(true, elts[0]);
 
         // Inform the user that sort has finished and what the next steps are.
         var elt = document.getElementById('updateQueue1');
@@ -273,35 +310,190 @@ var NetflixQueueSorter = (function() {
                 " button to save it.");
     }
 
-    function _sortByTitle() {
-        _sortInfo = [];
+    function sortByLength() {
+        sortInfo = [];
+        var pos = 1;
+
+        for (var idx = 0; idx < getQueue.length; idx++) {
+            var qq = getQueue[idx];
+
+            var record = {
+                "id": qq.boxId,
+                "len": qq.len,
+                "origPos": pos++
+            };
+            sortInfo.push(record);
+        }
+
+        var sortFn = function (a, b) {
+            return a.len > b.len ? -1 : 1;
+        };
+        sortInfo.sort(sortFn);
+
+        setOrder("origPos");
+    }
+
+    function getLength(queueIdx) {
+        if (queueIdx < totalQueueCount) {
+            var record = getQueue[queueIdx];
+            if (!record) {
+                // Unexpected result.
+                alert('Unexpected situation: no record found in queue.\n' +
+                        'Please let the script owner know.\n\n' +
+                        'GetLength: ' + queueIdx + ' out of ' +
+                        totalQueueCount);
+                done(false);
+                return;
+            }
+
+            // Update progress.
+            var pct = 100;
+            if (queueIdx < totalQueueCount - 1) {
+                pct = ((queueIdx / totalQueueCount) * 100).toFixed(0);
+            }
+            setProgressStatus('tt', 'Getting length info: ' + pct + '%');
+
+            var url = record.url;
+            GM_xmlhttpRequest({
+                'method': 'GET',
+                'url': url,
+                'onload': function (xhr) {
+                    parseGetLength(queueIdx, xhr.responseText);
+                }
+            });
+        } else {
+            // Now we can sort.
+            sortByLength();
+        }
+    }
+
+    function parseGetLength(queueIdx, text) {
+        // Use low value to make them appear on top if length cannot be
+        // retrieved.
+        var len = -Infinity;
+        var readableLen = " N/A ";
+        var isEpisode = false;
+
+        // In JavaScript, "everything until and including a newline" is
+        // represented as the expression "(?:.*?\n)*?".  So that matches
+        // wherever you are in the string until the end-of-line, and any
+        // lines underneath it.  To continue matching on another line,
+        // skip into the line first using ".*?".
+        var regex = /id="movielength"(?:.*?\n)*?.*?(\d+?) minutes</;
+        if (regex.test(text)) {
+            len = RegExp.$1 * 1;   // Convert to number.
+        } else {   // Could be a series... take the first episode.
+            regex = /Length:<.*?(\d+?) minutes</;
+            if (regex.test(text)) {
+                len = RegExp.$1 * 1;   // Convert to number.
+                isEpisode = true;
+            }
+            // Else no match... use high default values.
+        }
+
+        // Store value in minutes for sort cycle happening later.
+        getQueue[queueIdx].len = len * 1;
+
+        if (Infinity !== len) {
+            // Format minutes in something more readable.
+            var hh = Math.floor(len / 60);
+            var mm = len - (hh * 60);
+            readableLen = hh + ":" + (mm < 10 ? "0" : "") + mm;
+        }
+
+        // Add duration to text in title column.
+        var elt = document.getElementById(getQueue[queueIdx].titleId);
+        elt = elt.parentNode;   // Use parent node to avoid linking time.
+        elt.innerHTML = '<code><b>[' + readableLen + (isEpisode ? '+' : '') +
+                ']</b> </code>' + elt.innerHTML;
+ 
+        // Next item in the queue.
+        var delayed = function () {
+            getLength(queueIdx + 1);
+        };
+        setTimeout(delayed, XHR_DELAY);
+    }
+
+    function showLength() {
+        getQueue = [];
+
+        var elts = document.getElementsByClassName('o');
+        for (var idx = 0; idx < elts.length; idx++) {
+            var boxName = elts[idx].name;
+            var boxId = boxName.substring(2);
+
+            // Some BOBs include length but not all do.  Rather than risking
+            // having to make another request, just use the details page which
+            // always contains the length.
+            // TODO: Once Netflix has updated all BOBs to include length,
+            //       switch to BOBs as it is less bytes.
+
+            // If a movie is both at home and in the queue, or a movie has been
+            // watched but is still in the queue, there is both _0 and _1.
+            // There's even been a _2.  Only the highest ending is in the
+            // sortable table and the length is added to that element.
+            var ii = 0;
+            var href, titleId, titleElt;
+            while (titleElt =
+                    document.getElementById('b0' + boxId + '_' + ii)) {
+                titleId = 'b0' + boxId + '_' + ii;
+                href = titleElt.href;
+                ii++;
+            }
+
+            // Save time in the sort cycle by storing the boxId right now,
+            // and by storing the length in minutes in the queue records when
+            // the length is retrieved.  Otherwise the sort cycle would need
+            // to figure all of that out again.
+            var record = {
+                "boxId": boxId,       // needed for sort cycle
+                "titleId": titleId,   // needed to add length in UI
+                "url": href           // the URL that has the length info
+                // (added later: length in minutes)
+            };
+            getQueue.push(record);
+        }
+
+        totalQueueCount = getQueue.length;
+        if (0 !== totalQueueCount) {
+            getLength(0);
+        } else {
+            sortByLength();
+        }
+    }
+
+    function sortByTitle() {
+        sortInfo = [];
         var pos = 1;
 
         var elts = document.getElementsByClassName('o');
         for (var idx = 0; idx < elts.length; idx++) {
             var boxName = elts[idx].name;
             var boxId = boxName.substring(2);
+            // If a movie is both at home and in the queue, or a movie has been
+            // watched but is still in the queue, there is both _0 and _1.
+            // Here we either one works.
             var titleId = 'b0' + boxId + '_0';
             var titleElt = document.getElementById(titleId);
 
             var record = {
-                    "id": boxId,
-                    "title": titleElt.innerHTML.toUpperCase(),
-                    "origPos": pos++
+                "id": boxId,
+                "title": titleElt.innerHTML.toUpperCase(),
+                "origPos": pos++
             };
-            _sortInfo.push(record);
+            sortInfo.push(record);
         }
 
-        var sortFn = function(a, b) {
+        var sortFn = function (a, b) {
             return a.title > b.title ? -1 : 1;
         };
-        _sortInfo.sort(sortFn);
+        sortInfo.sort(sortFn);
 
-        _setOrder("origPos", elts);
+        setOrder("origPos", elts);
     }
 
-    function _sortByPlayability() {
-        _sortInfo = [];
+    function sortByPlayability() {
+        sortInfo = [];
 
         // Don't take the whole document.body.innerHTML as text.
         // Luckily there's a div containing just the items we need.
@@ -319,16 +511,16 @@ var NetflixQueueSorter = (function() {
             var id = RegExp.$1;
             var playable = RegExp.$2.length !== 0;
             var record = {
-                    "id": id,
-                    "play": playable,
-                    "origPos": pos++
+                "id": id,
+                "play": playable,
+                "origPos": pos++
             };
-            _sortInfo.push(record);
+            sortInfo.push(record);
         }
 
         // TODO: fix position of series discs.
 
-        var sortFn = function(a, b) {
+        var sortFn = function (a, b) {
             if (a.play) {
                 return 1;
             }
@@ -337,13 +529,13 @@ var NetflixQueueSorter = (function() {
             }
             return 1;   // Keeps non-playable items in current order.
         };
-        _sortInfo.sort(sortFn);
+        sortInfo.sort(sortFn);
 
-        _setOrder("origPos");
+        setOrder("origPos");
     }
 
-    function _sortByGenre() {
-        _sortInfo = [];
+    function sortByGenre() {
+        sortInfo = [];
 
         // Don't take the whole document.body.innerHTML as text.
         // Luckily there's a div containing just the items we need.
@@ -361,25 +553,25 @@ var NetflixQueueSorter = (function() {
             var id = RegExp.$1;
             var genre = RegExp.$2;
             var record = {
-                    "id": id,
-                    "genre": genre.toUpperCase(),
-                    "origPos": pos++
+                "id": id,
+                "genre": genre.toUpperCase(),
+                "origPos": pos++
             };
-            _sortInfo.push(record);
+            sortInfo.push(record);
         }
 
         // TODO: fix position of series discs.
 
-        var sortFn = function(a, b) {
+        var sortFn = function (a, b) {
             return a.genre > b.genre ? -1 : 1;
         };
-        _sortInfo.sort(sortFn);
+        sortInfo.sort(sortFn);
 
-        _setOrder("origPos");
+        setOrder("origPos");
     }
 
-    function _sortByAvailability() {
-        _sortInfo = [];
+    function sortByAvailability() {
+        sortInfo = [];
 
         // Don't take the whole document.body.innerHTML as text.
         // Luckily there's a div containing just the items we need.
@@ -397,16 +589,16 @@ var NetflixQueueSorter = (function() {
             var id = RegExp.$1;
             var avail = RegExp.$2;
             var record = {
-                    "id": id,
-                    "avail": avail.toUpperCase(),
-                    "origPos": pos++
+                "id": id,
+                "avail": avail.toUpperCase(),
+                "origPos": pos++
             };
-            _sortInfo.push(record);
+            sortInfo.push(record);
         }
 
         // TODO: fix position of series discs.
 
-        var sortFn = function(a, b) {
+        var sortFn = function (a, b) {
             var dateA, dateB;
 
             // DVD Queue: "To be released" should always be on top.
@@ -473,39 +665,39 @@ var NetflixQueueSorter = (function() {
             // All other cases.
             return 1;   // Keeps rest of items in current order.
         };
-        _sortInfo.sort(sortFn);
+        sortInfo.sort(sortFn);
 
-        _setOrder("origPos");
+        setOrder("origPos");
     }
 
-    function _matchForNetflixRatingGranulizer(pos, seriesInfo, movieInfo) {
+    function matchForNetflixRatingGranulizer(pos, seriesInfo, movieInfo) {
         var regex2 = /OR(\d+)(?:.*?\n)*?.*?class="tt".*?<a.*?>(.*?)<\/a>(?:.*?\n)*?.*?stars_.*?_(.*?).gif.*?>(.*?)</;
         if (regex2.test(movieInfo)) {
-            id = RegExp.$1;
-            title = RegExp.$2;
+            var id = RegExp.$1;
+            var title = RegExp.$2;
             var usrRating = RegExp.$3 / 10;   // The img tag has rating * 10.
 
             // The average rating is never there. Will handle this later.
             var avgRating = '';
 
-            record = {
+            var record = {
                 "id": id,
                 "title": title,
                 "usrRating": usrRating,
                 "avgRating": avgRating,
                 "origPos": pos++
             };
-            _sortInfo.push(record);
+            sortInfo.push(record);
 
             // Check if series disc.
             regex2 = /series="(\d+)"/;
             if (regex2.test(seriesInfo)) {
-                linkId = RegExp.$1;
+                var linkId = RegExp.$1;
 
                 // Don't add "link" key to record, as we're filtering 
                 // on that later.
 
-                _seriesLookup[linkId] = record;
+                seriesLookup[linkId] = record;
             }
             // Else it was a non-series movie.  No problem.
 
@@ -514,12 +706,12 @@ var NetflixQueueSorter = (function() {
         return false;
     }
 
-    function _sortByRating(sortByAvgRating) {
-        var id, linkId, pos, record, title;
+    function sortByRating(sortByAvgRating) {
+        var id, linkId, pos, len, record, title;
 
-        _sortInfo = [];
+        sortInfo = [];
 
-        _seriesLookup = {};
+        seriesLookup = {};
 
         // Don't take the whole document.body.innerHTML as text.
         // Luckily there's a div containing just the items we need.
@@ -540,7 +732,7 @@ var NetflixQueueSorter = (function() {
             // Check if non-series disc, or first-in-series disc.
             // Users that have the Netflix Rating Granulizer script installed
             // will have different markup, so need to check that first.
-            if (_matchForNetflixRatingGranulizer(pos, seriesInfo, movieInfo)) {
+            if (matchForNetflixRatingGranulizer(pos, seriesInfo, movieInfo)) {
                 // Yes, user also has the NRG script installed.
                 pos++;
                 continue;
@@ -570,7 +762,7 @@ var NetflixQueueSorter = (function() {
                     "avgRating": avgRating,
                     "origPos": pos++
                 };
-                _sortInfo.push(record);
+                sortInfo.push(record);
 
                 // Check if series disc.
                 regex2 = /series="(\d+)"/;
@@ -580,7 +772,7 @@ var NetflixQueueSorter = (function() {
                     // Don't add "link" key to record, as we're filtering 
                     // on that later.
 
-                    _seriesLookup[linkId] = record;
+                    seriesLookup[linkId] = record;
                 }
                 // Else it was a non-series movie.  No problem.
             } else {
@@ -603,7 +795,7 @@ var NetflixQueueSorter = (function() {
                             'Position:' + pos + '\n\n' +
                             'Series info:\n' + seriesInfo +
                             '\n\nMovie info:\n' + movieInfo);
-                    _done(false);
+                    done(false);
                     return;
                 }
 
@@ -618,7 +810,7 @@ var NetflixQueueSorter = (function() {
                         "link": linkId,
                         "origPos": pos++
                     };
-                    _sortInfo.push(record);
+                    sortInfo.push(record);
                 } else {
                     // Unexpected result.
                     alert('Unexpected situation: no movie ID found.\n' +
@@ -626,50 +818,91 @@ var NetflixQueueSorter = (function() {
                             'Position:' + pos + '\n\n' +
                             'Series info:\n' + seriesInfo +
                             '\n\nMovie info:\n' + movieInfo);
-                    _done(false);
+                    done(false);
                     return;
                 }
             }
         }
 
-        _getQueue = [];
+        getQueue = [];
         var algorithm = sortByAvgRating ? "avgRating" : "usrRating";
 
         // Make sure all movies have the rating that is being sorted on.
-        for (pos = 0, len = _sortInfo.length; pos < len; pos++) {
+        for (pos = 0, len = sortInfo.length; pos < len; pos++) {
             // Only do this for non-links.
-            if (!_sortInfo[pos].link) {
-                if (!_sortInfo[pos][algorithm]) {
-                    _getQueue.push(_sortInfo[pos]);
+            if (!sortInfo[pos].link) {
+                if (!sortInfo[pos][algorithm]) {
+                    getQueue.push(sortInfo[pos]);
                 }
             }
         }
-        _totalQueueCount = _getQueue.length;
-        if (0 !== _getQueue.length) {
-            _fixRatings(false, algorithm);
+        totalQueueCount = getQueue.length;
+        if (0 !== totalQueueCount) {
+            fixRatings(false, algorithm);
         } else {
-            _checkSeriesLinks(algorithm);
+            checkSeriesLinks(algorithm);
         }
     }
 
-    function _fixRatings(fixLinks, algorithm) {
-        var record = _getQueue.pop();
+    function reorderQueue(evt) {
+        // Prevent the user from pressing the buttons again.
+        for (var idx = 0, len = sortButtons.length; idx < len; idx++) {
+            setButtonState(sortButtons[idx].button, false);
+        }
+
+        // Let GUI redraw buttons.
+        var delayed = function () {
+            switch (evt.target.value) {
+            case 'reverse':
+                reverse();
+                break;
+            case 'shuffle':
+                shuffle();
+                break;
+            case 'length':
+                showLength();
+                break;
+            case 'title':
+                sortByTitle();
+                break;
+            case 'playable':
+                sortByPlayability();
+                break;
+            case 'usrRating':
+                sortByRating(false);
+                break;
+            case 'avgRating':
+                sortByRating(true);
+                break;
+            case 'genre':
+                sortByGenre();
+                break;
+            case 'availability':
+                sortByAvailability();
+                break;
+            }
+        };
+        setTimeout(delayed, 0);
+    }
+
+    function fixRatings(fixLinks, algorithm) {
+        var record = getQueue.pop();
         if (!record) {
             // Unexpected result.
             alert('Unexpected situation: no record found in queue.\n' +
                     'Please let the script owner know.\n\n' +
                     'FixLinks: ' + fixLinks + '\nAlgorithm: ' + algorithm);
-            _done(false);
+            done(false);
             return;
         }
 
         // Update progress.
         var txt = fixLinks ? 'series' : 'movie';
-        if (0 !== _getQueue.length) {
-            var pct = ((1 - _getQueue.length / _totalQueueCount) * 100).toFixed(0);
-            _setProgressStatus('st', 'Getting ' + txt + ' info: ' + pct + '%');
+        if (0 !== getQueue.length) {
+            var pct = ((1 - getQueue.length / totalQueueCount) * 100).toFixed(0);
+            setProgressStatus('st', 'Getting ' + txt + ' info: ' + pct + '%');
         } else {
-            _setProgressStatus('st', 'Getting ' + txt + ' info: 100%');
+            setProgressStatus('st', 'Getting ' + txt + ' info: 100%');
         }
 
         var id = fixLinks ? record.link : record.id;
@@ -677,13 +910,13 @@ var NetflixQueueSorter = (function() {
         GM_xmlhttpRequest({
             'method': 'GET',
             'url': url,
-            'onload': function(xhr) {
-                _parseFixRatings(fixLinks, algorithm, record, xhr.responseText);
+            'onload': function (xhr) {
+                parseFixRatings(fixLinks, algorithm, record, xhr.responseText);
             }
         });
     }
 
-    function _parseFixRatings(fixLinks, algorithm, record, text) {
+    function parseFixRatings(fixLinks, algorithm, record, text) {
         // Use value > 5 to make them appear on top if rating cannot be
         // retrieved.
         var usrRating = 100;
@@ -705,108 +938,52 @@ var NetflixQueueSorter = (function() {
                 "usrRating": usrRating,
                 "avgRating": avgRating
             };
-            _seriesLookup[linkId] = record;
+            seriesLookup[linkId] = record;
         }
 
         var delayed;
-        if (0 === _getQueue.length) {
+        if (0 === getQueue.length) {
             // Processed all items in getQueue; on to next step.
             if (fixLinks) {
-                _doActualSort(algorithm);
+                doActualSort(algorithm);
             } else {
-                delayed = function() { _checkSeriesLinks(algorithm); };
+                delayed = function () {
+                    checkSeriesLinks(algorithm);
+                };
                 setTimeout(delayed, XHR_DELAY);
             }
         } else {
-            delayed = function() { _fixRatings(fixLinks, algorithm); };
+            delayed = function () {
+                fixRatings(fixLinks, algorithm);
+            };
             setTimeout(delayed, XHR_DELAY);
         }
     }
 
-    function _checkSeriesLinks(algorithm) {
-        _getQueue = [];
+    function checkSeriesLinks(algorithm) {
+        getQueue = [];
 
         // Try to fix series links.
-        for (var pos = 0, len = _sortInfo.length; pos < len; pos++) {
-            var linkId = _sortInfo[pos].link;
+        for (var pos = 0, len = sortInfo.length; pos < len; pos++) {
+            var linkId = sortInfo[pos].link;
             if (linkId) {
-                var record = _seriesLookup[linkId];
+                var record = seriesLookup[linkId];
                 if (record) {
-                    _sortInfo[pos].usrRating = record.usrRating;
-                    _sortInfo[pos].avgRating = record.avgRating;
+                    sortInfo[pos].usrRating = record.usrRating;
+                    sortInfo[pos].avgRating = record.avgRating;
                 } else {
-                    _getQueue.push(_sortInfo[pos]);
+                    getQueue.push(sortInfo[pos]);
                 }
             }
         }
-        _totalQueueCount = _getQueue.length;
-        if (0 !== _getQueue.length) {
-            _fixRatings(true, algorithm);
+        totalQueueCount = getQueue.length;
+        if (0 !== getQueue.length) {
+            fixRatings(true, algorithm);
         } else {
-            _doActualSort(algorithm);
+            doActualSort(algorithm);
         }
     }
 
-    function _doActualSort(algorithm) {
-        var sortFn = function(a, b) {
-            if (a[algorithm] == b[algorithm]) {
-                return a.title > b.title ? -1 : 1;
-            }
-            return a[algorithm] > b[algorithm] ? 1 : -1;
-        };
-        _sortInfo.sort(sortFn);
-
-        _setOrder("origPos");
-    }
-
-    function _setOrder(sortValue, elts) {
-        elts = elts || document.getElementsByClassName('o');
-
-        var elt, firstBox, len, pos;
-        for (pos = 0, len = _sortInfo.length; pos < len; pos++) {
-            // Note: sortValue is 1-based, elts index is 0-based, so sub 1
-            elt = elts[_sortInfo[pos][sortValue] - 1];
-
-            // Set new value.
-            elt.value = _sortInfo.length - pos;
-
-            if (_sortInfo[pos].origPos === 1) {
-                firstBox = elt;
-            }
-        }
-
-        // Clear the status message, since we're done.
-        _setProgressStatus('st', '');
-
-        _done(true, firstBox);
-
-        // Inform the user that sort has finished and what the next steps are.
-        elt = document.getElementById('updateQueue1');
-        alert("Sort completed.  Now press the " + elt.alt +
-                " button to save it.");
-     }
-
-     function _done(enableUpdateQueueButton, firstBox) {
-        // Re-enable the sort buttons.
-        for (var idx = 0, len = _sortButtons.length; idx < len; idx++) {
-            _setButtonState(_sortButtons[idx].button, true);
-        }
-
-        // Enable the Update Queue button.
-        if (firstBox) {
-            firstBox.focus();   // This will enable the button.
-            firstBox.blur();   // Don't interfere with keyboard navigation.
-
-            // The focus() above will also color the row, so remove that.
-            // (Either color all changed rows (see v1.0), or none.)
-            var row = document.getElementById('firstqitem');
-            if (row) {
-                row.className = row.className.replace('bgreorder', '');
-            }
-        }
-    }
-
-    // Return publicly accessible variables and functions.
     return {
         //
         // Public functions
@@ -814,9 +991,9 @@ var NetflixQueueSorter = (function() {
         //
 
         // Initialize this script.
-        init: function() {
+        init: function () {
             // Build the GUI for this script.
-            _buildGui();
+            buildGui();
 
             // Now wait for user to press the button.
         }
