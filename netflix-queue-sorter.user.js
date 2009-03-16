@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 1.7, 2009-02-26
+// Version 1.8, 2009-03-16
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     1.7
-// @description v1.7: Sort your Netflix queue by movie title, length, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
+// @version     1.8
+// @description v1.8: Sort your Netflix queue by movie title, length, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
 // @include     http://www.netflix.com/Queue*
 // ==/UserScript==
 //
@@ -168,7 +168,8 @@ var NetflixQueueSorter = (function () {
                     addOrderSortOption(children[ii]);
                 } else if (children[ii].className === "tt") {
                     addTitleSortOption(children[ii]);
-                } else if (document.URL.indexOf('ELECTRONIC') < 0 &&
+                } else if (document.URL.indexOf('inqt=wn') < 0 &&
+                        // Not instant so allow sort by playability.
                         children[ii].className === "wn") {
                     addInstantSortOption(children[ii]);
                 } else if (children[ii].className === "st") {
@@ -394,7 +395,7 @@ var NetflixQueueSorter = (function () {
         // Store value in minutes for sort cycle happening later.
         getQueue[queueIdx].len = len * 1;
 
-        if (Infinity !== len) {
+        if (-Infinity !== len) {
             // Format minutes in something more readable.
             var hh = Math.floor(len / 60);
             var mm = len - (hh * 60);
@@ -463,8 +464,22 @@ var NetflixQueueSorter = (function () {
     }
 
     function sortByTitle() {
+        var articles;
         sortInfo = [];
         var pos = 1;
+
+        var articlesKey = 'sortByTitle.articles';
+        var ignoreArticlesKey = 'sortByTitle.ignoreArticles';
+        var ignoreArticles = GM_getValue(ignoreArticlesKey);
+        if (undefined === ignoreArticles) {
+            // Store keys so that users can change it via about:config.
+            GM_setValue(ignoreArticlesKey, false);
+            // The articles are used "as-is", so there must be a space after
+            // each one in most cases.  To avoid typos in the default, use [].
+            articles = [
+                    "A ", "AN ", "THE ", "EL ", "LA ", "LE ", "IL ", "L'" ];
+            GM_setValue(articlesKey, articles.join(',').toUpperCase());
+        }
 
         var elts = document.getElementsByClassName('o');
         for (var idx = 0; idx < elts.length; idx++) {
@@ -476,9 +491,25 @@ var NetflixQueueSorter = (function () {
             var titleId = 'b0' + boxId + '_0';
             var titleElt = document.getElementById(titleId);
 
+            var title = titleElt.innerHTML.toUpperCase();
+            if (ignoreArticles) {
+                // Get the articles, but default to empty string.
+                var articlesStr = GM_getValue(articlesKey, '').toUpperCase();
+                articles = articlesStr.split(',');
+                for (var aa = 0; aa < articles.length; aa++) {
+                    article = articles[aa].toUpperCase();
+                    if (0 === title.indexOf(article)) {
+                        // Move article to the end of the string.
+                        title = title.substring(article.length) +
+                                ', ' + article;
+                        break;
+                    }
+                }
+            }
+
             var record = {
                 "id": boxId,
-                "title": titleElt.innerHTML.toUpperCase(),
+                "title": title,
                 "origPos": pos++
             };
             sortInfo.push(record);
@@ -995,7 +1026,7 @@ var NetflixQueueSorter = (function () {
             // Build the GUI for this script.
             buildGui();
 
-            // Now wait for user to press the button.
+            // Now wait for the user to press a button.
         }
     };
 })();
