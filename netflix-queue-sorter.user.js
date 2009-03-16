@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 1.8, 2009-03-16
+// Version 1.9, 2009-03-16
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     1.8
-// @description v1.8: Sort your Netflix queue by movie title, length, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
+// @version     1.9
+// @description v1.9: Sort your Netflix queue by movie title, length, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
 // @include     http://www.netflix.com/Queue*
 // ==/UserScript==
 //
@@ -472,12 +472,14 @@ var NetflixQueueSorter = (function () {
         var ignoreArticlesKey = 'sortByTitle.ignoreArticles';
         var ignoreArticles = GM_getValue(ignoreArticlesKey);
         if (undefined === ignoreArticles) {
+            // Use true as default as Netflix ignores articles too.
+            ignoreArticles = true;
+
             // Store keys so that users can change it via about:config.
-            GM_setValue(ignoreArticlesKey, false);
+            GM_setValue(ignoreArticlesKey, ignoreArticles);
             // The articles are used "as-is", so there must be a space after
             // each one in most cases.  To avoid typos in the default, use [].
-            articles = [
-                    "A ", "AN ", "THE ", "EL ", "LA ", "LE ", "IL ", "L'" ];
+            articles = ["A ", "AN ", "THE ", "EL ", "LA ", "LE ", "IL ", "L'"];
             GM_setValue(articlesKey, articles.join(',').toUpperCase());
         }
 
