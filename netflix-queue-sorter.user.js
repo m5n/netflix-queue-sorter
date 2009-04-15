@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 1.9, 2009-03-16
+// Version 1.10, 2009-04-15
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     1.9
-// @description v1.9: Sort your Netflix queue by movie title, length, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
+// @version     1.10
+// @description v1.10: Sort your Netflix queue by movie title, length, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
 // @include     http://www.netflix.com/Queue*
 // ==/UserScript==
 //
@@ -30,7 +30,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 // Satisfy JSLint.
-/*global alert, clearTimeout, document, GM_registerMenuCommand, GM_xmlhttpRequest, setTimeout */
+/*global alert, clearTimeout, document, GM_getValue, GM_setValue, GM_registerMenuCommand, GM_xmlhttpRequest, setTimeout */
 
 // Singleton pattern.
 var NetflixQueueSorter = (function () {
@@ -48,10 +48,33 @@ var NetflixQueueSorter = (function () {
     // Private functions
     //
 
-    function createSortButton(value, label, onClickFn) {
+    // Add support for document.getElementsByClassName, e.g. for FF2.
+    function customGetElementsByClassName(elt, tag, name) {
+        if ("undefined" === typeof elt.getElementsByClassName) {
+            var result = [];
+
+            if (undefined === tag) { 
+                alert('Internal error: must pass tag name!');
+            } else {
+                var elts = elt.getElementsByTagName(tag);
+                for (var ii = 0; ii < elts.length; ii++) {
+                    if (elts[ii].className === name) {
+                        result.push(elts[ii]);
+                    }
+                }
+            }
+
+            return result;
+        } else {
+            return elt.getElementsByClassName(name);
+        }
+    }
+
+    function createSortButton(value, label, title, onClickFn) {
         var button = document.createElement('button');
         button.setAttribute('type', 'button');
         button.setAttribute('value', value);
+        button.setAttribute('title', title);
         button.setAttribute('style', 'font-size: smaller');
         var buttonText = document.createTextNode(label);
         button.appendChild(buttonText);
@@ -73,7 +96,8 @@ var NetflixQueueSorter = (function () {
                 div.appendChild(span);
             } else {
                 var buttonInfo = createSortButton(
-                        options[idx].sort, options[idx].label, reorderQueue);
+                        options[idx].sort, options[idx].label,
+                        options[idx].title, reorderQueue);
                 sortButtons.push(buttonInfo);
                 div.appendChild(buttonInfo.button);
             }
@@ -90,11 +114,13 @@ var NetflixQueueSorter = (function () {
         addOptions(header, [
             {
                 'sort': 'shuffle',
-                'label': 'Shuffle'
+                'label': 'Shuffle',
+                'title': 'Shuffles your queue into a random order.'
             },
             {
                 'sort': 'reverse',
-                'label': 'Reverse'
+                'label': 'Reverse',
+                'title': 'Reverses the current list order.'
             }
         ]);
     }
@@ -106,11 +132,14 @@ var NetflixQueueSorter = (function () {
             },
             {
                 'sort': 'title',
-                'label': 'Sort by Title'
+                'label': 'Sort by Title',
+                'title': 'Alphabetically sorts your queue by movie title.'
             },
             {
                 'sort': 'length',
-                'label': 'Sort by Length / Display Length'
+                'label': 'Sort by Length / Display Length',
+                'title': 'Displays the length of each movie and sorts your ' +
+                        'queue by length from short to long.'
             }
         ]);
     }
@@ -118,8 +147,16 @@ var NetflixQueueSorter = (function () {
     function addInstantSortOption(header) {
         addOptions(header, [
             {
-                'sort': 'playable',
-                'label': 'Sort'
+                'sort': 'instantTop',
+                'label': '/\\',
+                'title': 'Move instantly playable movies to the top of your ' +
+                        'queue.'
+            },
+            {
+                'sort': 'instantBottom',
+                'label': '\\/',
+                'title': 'Move instantly playable movies to the bottom of ' +
+                        'your queue.'
             }
         ]);
     }
@@ -131,11 +168,13 @@ var NetflixQueueSorter = (function () {
             },
             {
                 'sort': 'usrRating',
-                'label': 'Sort by Star Rating'
+                'label': 'Sort by Star Rating',
+                'title': 'Sorts all movies by star rating from high to low.'
             },
             {
                 'sort': 'avgRating',
-                'label': 'Sort by Avg Rating'
+                'label': 'Sort by Avg Rating',
+                'title': 'Sorts all movies by average rating from high to low.'
             }
         ]);
     }
@@ -144,7 +183,8 @@ var NetflixQueueSorter = (function () {
         addOptions(header, [
             {
                 'sort': 'genre',
-                'label': 'Sort by Genre'
+                'label': 'Sort by Genre',
+                'title': 'Alphabetically sorts your queue by genre.'
             }
         ]);
     }
@@ -153,7 +193,9 @@ var NetflixQueueSorter = (function () {
         addOptions(header, [
             {
                 'sort': 'availability',
-                'label': 'Sort by Availability'
+                'label': 'Sort by Availability',
+                'title': 'Moves the most desirable movies to the top of ' +
+                        'your queue.'
             }
         ]);
     }
@@ -219,7 +261,7 @@ var NetflixQueueSorter = (function () {
     }
 
     function setOrder(sortValue, elts) {
-        elts = elts || document.getElementsByClassName('o');
+        elts = elts || customGetElementsByClassName(document, 'input', 'o');
 
         var elt, firstBox, len, pos;
         for (pos = 0, len = sortInfo.length; pos < len; pos++) {
@@ -260,7 +302,7 @@ var NetflixQueueSorter = (function () {
 
     // Return publicly accessible variables and functions.
     function reverse() {
-        var elts = document.getElementsByClassName('o');
+        var elts = customGetElementsByClassName(document, 'input', 'o');
 
         var maxIdx = Math.floor(elts.length / 2);
         for (var idx = 0; idx < maxIdx; idx++) {
@@ -282,7 +324,7 @@ var NetflixQueueSorter = (function () {
 
     function shuffle() {
         var idx;
-        var elts = document.getElementsByClassName('o');
+        var elts = customGetElementsByClassName(document, 'input', 'o');
 
         // Generate a list of random positions.
         var slots = [];
@@ -418,7 +460,7 @@ var NetflixQueueSorter = (function () {
     function showLength() {
         getQueue = [];
 
-        var elts = document.getElementsByClassName('o');
+        var elts = customGetElementsByClassName(document, 'input', 'o');
         for (var idx = 0; idx < elts.length; idx++) {
             var boxName = elts[idx].name;
             var boxId = boxName.substring(2);
@@ -479,11 +521,21 @@ var NetflixQueueSorter = (function () {
             GM_setValue(ignoreArticlesKey, ignoreArticles);
             // The articles are used "as-is", so there must be a space after
             // each one in most cases.  To avoid typos in the default, use [].
-            articles = ["A ", "AN ", "THE ", "EL ", "LA ", "LE ", "IL ", "L'"];
+            articles = [
+                "A ",
+                "AN ",
+                "THE ",
+                "EL ",
+                "LA ",
+                "LE ",
+                "LES ",
+                "IL ",
+                "L'"
+            ];
             GM_setValue(articlesKey, articles.join(',').toUpperCase());
         }
 
-        var elts = document.getElementsByClassName('o');
+        var elts = customGetElementsByClassName(document, 'input', 'o');
         for (var idx = 0; idx < elts.length; idx++) {
             var boxName = elts[idx].name;
             var boxId = boxName.substring(2);
@@ -499,7 +551,7 @@ var NetflixQueueSorter = (function () {
                 var articlesStr = GM_getValue(articlesKey, '').toUpperCase();
                 articles = articlesStr.split(',');
                 for (var aa = 0; aa < articles.length; aa++) {
-                    article = articles[aa].toUpperCase();
+                    var article = articles[aa].toUpperCase();
                     if (0 === title.indexOf(article)) {
                         // Move article to the end of the string.
                         title = title.substring(article.length) +
@@ -525,7 +577,7 @@ var NetflixQueueSorter = (function () {
         setOrder("origPos", elts);
     }
 
-    function sortByPlayability() {
+    function sortByPlayability(moveToTop) {
         sortInfo = [];
 
         // Don't take the whole document.body.innerHTML as text.
@@ -553,18 +605,30 @@ var NetflixQueueSorter = (function () {
 
         // TODO: fix position of series discs.
 
+        var sortVal = moveToTop ? 1 : -1;
         var sortFn = function (a, b) {
+            if (a.play && b.play) {
+                return 1;   // Keeps playable items in current order.
+            }
             if (a.play) {
-                return 1;
+                return sortVal;
             }
             if (b.play) {
-                return -1;
+                return -sortVal;
             }
             return 1;   // Keeps non-playable items in current order.
         };
         sortInfo.sort(sortFn);
 
         setOrder("origPos");
+    }
+
+    function moveInstantTop() {
+        sortByPlayability(true);
+    }
+
+    function moveInstantBottom() {
+        sortByPlayability(false);
     }
 
     function sortByGenre() {
@@ -898,8 +962,11 @@ var NetflixQueueSorter = (function () {
             case 'title':
                 sortByTitle();
                 break;
-            case 'playable':
-                sortByPlayability();
+            case 'instantTop':
+                moveInstantTop();
+                break;
+            case 'instantBottom':
+                moveInstantBottom();
                 break;
             case 'usrRating':
                 sortByRating(false);
@@ -1031,7 +1098,7 @@ var NetflixQueueSorter = (function () {
             // Now wait for the user to press a button.
         }
     };
-})();
+}());
 // End singleton pattern.
 
 // Run this script.
