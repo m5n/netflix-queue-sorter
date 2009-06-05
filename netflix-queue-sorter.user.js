@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 1.10, 2009-04-15
+// Version 1.11, 2009-06-05
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     1.10
-// @description v1.10: Sort your Netflix queue by movie title, length, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
+// @version     1.11
+// @description v1.11: Sort your Netflix queue by movie title, length, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
 // @include     http://www.netflix.com/Queue*
 // ==/UserScript==
 //
@@ -42,6 +42,7 @@ var NetflixQueueSorter = (function () {
     var getQueue = [];
     var totalQueueCount = 0;
     var seriesLookup = {};
+    var cancelledSort = false;
     var XHR_DELAY = 500;
 
     //
@@ -70,6 +71,20 @@ var NetflixQueueSorter = (function () {
         }
     }
 
+    // To somewhat synchronize AJAX calls and the cancelling of the sort,
+    // the button click will just set the flag, and only after the last 
+    // AJAX result is processed will the cancel command itself be processed.
+    function cancelSort() {
+        cancelledSort = true;
+    }
+    function realCancelSort() {
+        // Clear the status message, since we're done.
+        clearProgressStatus();
+
+        // Re-enable the sort buttons.
+        setSortButtonState(true);
+    }
+
     function createSortButton(value, label, title, onClickFn) {
         var button = document.createElement('button');
         button.setAttribute('type', 'button');
@@ -90,9 +105,24 @@ var NetflixQueueSorter = (function () {
 
         for (var idx = 0; idx < options.length; idx++) {
             if (options[idx].isProgress) {
+                // Progress feedback area.
                 var span = document.createElement('span');
                 span.setAttribute('id', 'gm_progress_' + header.className);
                 span.setAttribute('style', 'padding: 0 0 2px 2px');
+                div.appendChild(span);
+                span = document.createElement('span');
+                span.setAttribute('id',
+                        'gm_progress_cancel_' + header.className);
+                span.setAttribute('style',
+                        'padding: 0 0 2px 7px; visibility: hidden');
+                span.appendChild(document.createTextNode('['));
+                // Cancel button.
+                var link = document.createElement('a');
+                link.setAttribute('style', 'cursor: pointer');
+                link.appendChild(document.createTextNode('cancel'));
+                link.addEventListener('click', cancelSort, true);
+                span.appendChild(link);
+                span.appendChild(document.createTextNode(']'));
                 div.appendChild(span);
             } else {
                 var buttonInfo = createSortButton(
@@ -225,11 +255,21 @@ var NetflixQueueSorter = (function () {
         }
     }
 
-    function setProgressStatus(id, msg) {
+    function setProgressStatus(id, msg, canCancel) {
+        canCancel = undefined === canCancel;   // Init.
+
         var elt = document.getElementById('gm_progress_' + id);
         if (elt) {
             elt.innerHTML = msg;
         }
+
+        elt = document.getElementById('gm_progress_cancel_' + id);
+        elt.style.visibility = canCancel ? 'visible' : 'hidden';
+    }
+
+    function clearProgressStatus() {
+        setProgressStatus('tt', '', false);
+        setProgressStatus('st', '', false);
     }
 
     function setButtonState(button, enabled) {
@@ -240,11 +280,15 @@ var NetflixQueueSorter = (function () {
         }
     }
 
+    function setSortButtonState(enabled) {
+        for (var idx = 0, len = sortButtons.length; idx < len; idx++) {
+            setButtonState(sortButtons[idx].button, enabled);
+        }
+    }
+
     function done(enableUpdateQueueButton, firstBox) {
         // Re-enable the sort buttons.
-        for (var idx = 0, len = sortButtons.length; idx < len; idx++) {
-            setButtonState(sortButtons[idx].button, true);
-        }
+        setSortButtonState(true);
 
         // Enable the Update Queue button.
         if (firstBox) {
@@ -277,8 +321,7 @@ var NetflixQueueSorter = (function () {
         }
 
         // Clear the status message, since we're done.
-        setProgressStatus('tt', '');
-        setProgressStatus('st', '');
+        clearProgressStatus();
 
         done(true, firstBox);
 
@@ -390,20 +433,30 @@ var NetflixQueueSorter = (function () {
             }
 
             // Update progress.
-            var pct = 100;
             if (queueIdx < totalQueueCount - 1) {
-                pct = ((queueIdx / totalQueueCount) * 100).toFixed(0);
+                var pct = ((queueIdx / totalQueueCount) * 100).toFixed(0);
+                setProgressStatus('tt', 'Getting length info: ' + pct + '%');
+            } else {
+                setProgressStatus('tt', 'Getting length info: 100%', false);
             }
-            setProgressStatus('tt', 'Getting length info: ' + pct + '%');
 
-            var url = record.url;
-            GM_xmlhttpRequest({
-                'method': 'GET',
-                'url': url,
-                'onload': function (xhr) {
-                    parseGetLength(queueIdx, xhr.responseText);
-                }
-            });
+            // Since user can cancel and then re-start the sort, check if 
+            // length was already added.  Code here mimics parseGetLength.
+            var elt = document.getElementById(record.titleId);
+            elt = elt.parentNode;
+            if (/^<code><b>\[\d+:\d+/.test(elt.innerHTML)) {
+                // Next item in the queue.
+                getLength(queueIdx + 1);
+            } else {
+                var url = record.url;
+                GM_xmlhttpRequest({
+                    'method': 'GET',
+                    'url': url,
+                    'onload': function (xhr) {
+                        parseGetLength(queueIdx, xhr.responseText);
+                    }
+                });
+            }
         } else {
             // Now we can sort.
             sortByLength();
@@ -450,11 +503,15 @@ var NetflixQueueSorter = (function () {
         elt.innerHTML = '<code><b>[' + readableLen + (isEpisode ? '+' : '') +
                 ']</b> </code>' + elt.innerHTML;
  
-        // Next item in the queue.
-        var delayed = function () {
-            getLength(queueIdx + 1);
-        };
-        setTimeout(delayed, XHR_DELAY);
+        if (cancelledSort) {
+            realCancelSort();
+        } else {
+            // Next item in the queue.
+            var delayed = function () {
+                getLength(queueIdx + 1);
+            };
+            setTimeout(delayed, XHR_DELAY);
+        }
     }
 
     function showLength() {
@@ -469,7 +526,8 @@ var NetflixQueueSorter = (function () {
             // having to make another request, just use the details page which
             // always contains the length.
             // TODO: Once Netflix has updated all BOBs to include length,
-            //       switch to BOBs as it is less bytes.
+            //       (only series discs don't have it yet) switch to BOBs
+            //       as it is less bytes.
 
             // If a movie is both at home and in the queue, or a movie has been
             // watched but is still in the queue, there is both _0 and _1.
@@ -681,10 +739,10 @@ var NetflixQueueSorter = (function () {
         // wherever you are in the string until the end-of-line, and any
         // lines underneath it.  To continue matching on another line,
         // skip into the line first using ".*?".
-        var regex = /name="OR(\d+)"(?:.*?\n)*?.*?class="av">(.*?)<\/td/g;
+        var regex = /name="OR(\d+)"(?:.*?\n)*?.*?class="(av|km)">(.*?)<\/td/g;
         while (regex.test(text)) {
             var id = RegExp.$1;
-            var avail = RegExp.$2;
+            var avail = RegExp.$3;
             var record = {
                 "id": id,
                 "avail": avail.toUpperCase(),
@@ -703,10 +761,10 @@ var NetflixQueueSorter = (function () {
                     b.avail.indexOf('RELEASES') >= 0) {
                 // Sort by date.
 
-                / (.*?)</.test(a.avail);
+                /(\d+\/\d+\/\d+)</.test(a.avail);
                 dateA = new Date(RegExp.$1);
 
-                / (.*?)</.test(b.avail);
+                /(\d+\/\d+\/\d+)</.test(b.avail);
                 dateB = new Date(RegExp.$1);
 
                 return dateA.getTime() > dateB.getTime() ? -1 : 1;
@@ -724,10 +782,10 @@ var NetflixQueueSorter = (function () {
                     b.avail.indexOf('UNTIL') >= 0) {
                 // Sort by date.
 
-                />.*?>(.*?)</.test(a.avail);
+                /(\d+\/\d+\/\d+)/.test(a.avail);
                 dateA = new Date(RegExp.$1);
 
-                />.*?>(.*?)</.test(b.avail);
+                /(\d+\/\d+\/\d+)/.test(b.avail);
                 dateB = new Date(RegExp.$1);
 
                 return dateA.getTime() > dateB.getTime() ? -1 : 1;
@@ -739,7 +797,7 @@ var NetflixQueueSorter = (function () {
                 return -1;
             }
 
-            // Order "wait" as follows: Very Long, Long, Short.
+            // Order "wait" as: Very Long, Long, Short, Now, Unavailable.
             if (a.avail.indexOf('VERY') >= 0) {
                 return 1;
             }
@@ -756,6 +814,18 @@ var NetflixQueueSorter = (function () {
                 return 1;
             }
             if (b.avail.indexOf('SHORT') >= 0) {
+                return -1;
+            }
+            if (a.avail.indexOf('NOW') >= 0) {
+                return 1;
+            }
+            if (b.avail.indexOf('NOW') >= 0) {
+                return -1;
+            }
+            if (a.avail.indexOf('UNAVAILABLE') >= 0) {
+                return 1;
+            }
+            if (b.avail.indexOf('UNAVAILABLE') >= 0) {
                 return -1;
             }
 
@@ -943,9 +1013,10 @@ var NetflixQueueSorter = (function () {
 
     function reorderQueue(evt) {
         // Prevent the user from pressing the buttons again.
-        for (var idx = 0, len = sortButtons.length; idx < len; idx++) {
-            setButtonState(sortButtons[idx].button, false);
-        }
+        setSortButtonState(false);
+
+        // Reset sort options.
+        cancelledSort = false;
 
         // Let GUI redraw buttons.
         var delayed = function () {
@@ -1002,7 +1073,7 @@ var NetflixQueueSorter = (function () {
             var pct = ((1 - getQueue.length / totalQueueCount) * 100).toFixed(0);
             setProgressStatus('st', 'Getting ' + txt + ' info: ' + pct + '%');
         } else {
-            setProgressStatus('st', 'Getting ' + txt + ' info: 100%');
+            setProgressStatus('st', 'Getting ' + txt + ' info: 100%', false);
         }
 
         var id = fixLinks ? record.link : record.id;
@@ -1041,22 +1112,26 @@ var NetflixQueueSorter = (function () {
             seriesLookup[linkId] = record;
         }
 
-        var delayed;
-        if (0 === getQueue.length) {
-            // Processed all items in getQueue; on to next step.
-            if (fixLinks) {
-                doActualSort(algorithm);
+        if (cancelledSort) {
+            realCancelSort();
+        } else {
+            var delayed;
+            if (0 === getQueue.length) {
+                // Processed all items in getQueue; on to next step.
+                if (fixLinks) {
+                    doActualSort(algorithm);
+                } else {
+                    delayed = function () {
+                        checkSeriesLinks(algorithm);
+                    };
+                    setTimeout(delayed, XHR_DELAY);
+                }
             } else {
                 delayed = function () {
-                    checkSeriesLinks(algorithm);
+                    fixRatings(fixLinks, algorithm);
                 };
                 setTimeout(delayed, XHR_DELAY);
             }
-        } else {
-            delayed = function () {
-                fixRatings(fixLinks, algorithm);
-            };
-            setTimeout(delayed, XHR_DELAY);
         }
     }
 
