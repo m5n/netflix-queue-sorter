@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 1.11, 2009-06-05
+// Version 1.12, 2009-08-26
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     1.11
-// @description v1.11: Sort your Netflix queue by movie title, length, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
+// @version     1.12
+// @description v1.12: Sort your Netflix queue by movie title, length, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
 // @include     http://www.netflix.com/Queue*
 // ==/UserScript==
 //
@@ -906,7 +906,7 @@ var NetflixQueueSorter = (function () {
             }
             // Now we know there's no altered markup, so deal with standard
             // Netflix markup.
-            var regex2 = /OR(\d+)(?:.*?\n)*?.*?class="tt".*?<a.*?>(.*?)<\/a>(?:.*?\n)*?.*?width:(.*?)px.*?>(.*?)</;
+            var regex2 = /OR(\d+)(?:.*?\n)*?.*?class="tt".*?<a.*?>(.*?)<\/a>(?:.*?\n)*?.*?sbmf-(.*?)".*?>(.*?)</;
             if (regex2.test(movieInfo)) {
                 id = RegExp.$1;
                 title = RegExp.$2;
@@ -1094,7 +1094,7 @@ var NetflixQueueSorter = (function () {
         var avgRating = 100;
 
         // JSON is returned, so escape quotes.
-        var regex = /rating-.*?<span class=\\"value\\">(.*?)<.*?rating-avg.*?<span class=\\"value\\">(.*?)</;
+        var regex = /starbar-.*?<span class=\\"rating\\">(.*?)<.*?starbar-avg.*?<span class=\\"rating\\">(.*?)</;
         if (regex.test(text)) {
             usrRating = RegExp.$1;
             avgRating = RegExp.$2;
