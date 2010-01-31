@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 2.2 2011-01-12
+// Version 2.3 2011-01-31
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     2.2
-// @description v2.2: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, and sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
+// @version     2.3
+// @description v2.3: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, and sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
 // @include     http://movies.netflix.com/Queue*
 // @include     http://www.netflix.com/Queue*
 // @include     http://movies.netflix.ca/Queue*
@@ -144,9 +144,10 @@ function GM_xmlhttpRequest(config) {
 
     urlMap = {
         'http://userscripts.org/scripts/show/35183': 'us.org.html',
-        'http://movies.netflix.com/Movie/60028867': '60028867.html',
-        'http://movies.netflix.com/Movie/60028868': '60028868.html',
-        'http://movies.netflix.com/Movie/70023939': '70023939.html'
+        'http://www.netflix.com/Movie/60028867': '60028867.html',
+        'http://www.netflix.com/Movie/60028868': '60028868.html',
+        'http://www.netflix.com/Movie/70022103': '70022103.html',
+        'http://www.netflix.com/Movie/70023939': '70023939.html'
     };
     if (urlMap[config.url]) {
         config.url = urlMap[config.url];
@@ -638,7 +639,10 @@ var NetflixDetailsPageRetriever = function () {
 // Netflix movie details URL.
 // Note: Chrome does not support cross-domain XHR so need to use server name!
 NetflixDetailsPageRetriever.DETAILS_PAGE_URL =
-        'http://' + window.location.host + '/Movie/{movieId}';
+        'http://www.netflix.com/Movie/{movieId}';
+        // TODO: If www gets fwd'ed to movies, do:
+        //'http://' + (window.location.host ? window.location.host
+        //    : 'movies.netflix.com') + '/Movie/{movieId}';
 
 NetflixDetailsPageRetriever.prototype = new Retriever();
 
@@ -2786,7 +2790,7 @@ QueueManager.prototype.getUiUnsupportedCssTemplate = function () {
 QueueManager.prototype.getUiHtmlTemplate = function () {
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.2</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.3</legend>' +
             '<div id="nqs-controls">' +
                 // JSLint does not like these javascript hrefs (true, they do
                 // not follow the semantic layered markup rules), but at least
@@ -2859,7 +2863,7 @@ QueueManager.prototype.getUiUnsupportedHtmlTemplate = function () {
     // TODO: FUTURE: add Opera,IE here once it's supported.
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.2</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.3</legend>' +
             'Your browser is not supported.  Please use the latest ' +
             'version of Chrome, Firefox or Safari.' +
         '</fieldset>';
@@ -3318,7 +3322,7 @@ QueueManager.prototype.assertUniqueDataPoints = function () {
 QueueManager.prototype.checkForUpdates = function () {
     function versionCheckHandler(response) {
         var upgradeElt,
-            version = 2.2,
+            version = 2.3,
             latestVersion = -1,
             result = /<b>Version:<\/b>\n([\d\.]+?)\n<br/.exec(
                     response.responseText);
