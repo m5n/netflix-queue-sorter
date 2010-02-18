@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 1.12, 2009-08-26
+// Version 1.13, 2010-02-18
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     1.12
-// @description v1.12: Sort your Netflix queue by movie title, length, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
+// @version     1.13
+// @description v1.13: Sort your Netflix queue by movie title, length, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
 // @include     http://www.netflix.com/Queue*
 // ==/UserScript==
 //
@@ -606,7 +606,8 @@ var NetflixQueueSorter = (function () {
             var title = titleElt.innerHTML.toUpperCase();
             if (ignoreArticles) {
                 // Get the articles, but default to empty string.
-                var articlesStr = GM_getValue(articlesKey, '').toUpperCase();
+                var articlesStr = GM_getValue(articlesKey, '') || '';
+                articlesStr = articlesStr.toUpperCase();
                 articles = articlesStr.split(',');
                 for (var aa = 0; aa < articles.length; aa++) {
                     var article = articles[aa].toUpperCase();
