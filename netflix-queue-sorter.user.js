@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 2.3 2011-01-31
+// Version 2.4 2011-03-14
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     2.3
-// @description v2.3: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, and sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
+// @version     2.4
+// @description v2.4: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, and sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
 // @include     http://movies.netflix.com/Queue*
 // @include     http://www.netflix.com/Queue*
 // @include     http://movies.netflix.ca/Queue*
@@ -144,6 +144,8 @@ function GM_xmlhttpRequest(config) {
 
     urlMap = {
         'http://userscripts.org/scripts/show/35183': 'us.org.html',
+        'http://www.netflix.com/Movie/60024922': '60024922.html',
+        'http://www.netflix.com/Movie/70122307': '70122307.html',
         'http://www.netflix.com/Movie/60028867': '60028867.html',
         'http://www.netflix.com/Movie/60028868': '60028868.html',
         'http://www.netflix.com/Movie/70022103': '70022103.html',
@@ -904,7 +906,7 @@ NetflixDetailsPageRetriever.prototype.extractDateAdded = function (id, dom) {
 
     // Note: to make sort faster, we should return time in seconds here, but
     // that makes the movie info display not readable.  Opt for readability.
-    if (/(\d+\/\d+\/\d+)/.test(elt.innerHTML)) {
+    if (elt && /(\d+\/\d+\/\d+)/.test(elt.innerHTML)) {
         return RegExp.$1;
     }
 };
@@ -2717,6 +2719,7 @@ QueueManager.prototype.getUiCssTemplate = function () {
         '}' +
         // Config button is shown by default.
         '#netflix-queue-sorter .nqs-icon-link#nqs-icon-configure {' +
+            'display: none;' +   // TODO: NOW: show when config UI is done.
             'background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAFBElEQVRYw7VXXWhcRRSevdlks8lmN7sbaIzpRgJSWxGrWASLUijogy+iCK1oVay1D1YM+OCL9kf0SUEK0lZfNFGKQgMaMSFCZANKqKAVWiQ+ZdP8bjab7E+y2d38+H2XOet43STddB34mLkz557zzTnnzpzrGh8fV2ZzuVwqm81amUzmvo2NjUNAeG1t7WqhUBhGn8azIqrVXCRAo2xUjLGVTqffXlxcfH99fd2etyxL1dbWjheLxQ+WlpYuqSo2VywWU4lEQoVCIRqxJ2dmZoIgcBZkTgkxoqGhgf27IPGekK4KgbGxMdsL7e3tqr6+Xk1PTysQ4PorMHgefQMJ0CMgkVtZWdmD8c0dGYQdQYkAw4Bdqbq6OtXR0aEQApVMJm0BGDoI431AkCRqamo4fXh1dXVoO0OmQdkAcknl83m1vLxs9zYBAruyBWiARORZG/1JJ6QoPoi1X8oZ1KQVEtYGDdIYN8iezyBfSmQS2DU7O3sSLj+HyQ15MRAIqKamJns8Pz//K/qH9EtxYC/GSTM/kKC2YtkhIc9cE72m+20C0Wj0buzwL7fb3YdP72UIz1MhjXd2dlLRE6Ojo99jV26+ALk/IHMAyovcKY0IxIhzbK7/J1SDg4MPw+AIvwAk2J84A57P5XK/MeMjkcj9SMg+eGc3WdOgx+NRXq93aGFh4SXs7ibJmgZNo7dK4B4ouQHlFr/3xsbGDJ6/wtiDPHgWhHySRJJI8ILy+/0xeOxFrEfNmFdMYGBggB//z1B+QAwwEUWZGWeTBFtzc3MeXuiCNy6YJCoi0N/fT6UMww9AyGlsM9AgAU+Q8MW5ubk3YSRv5kUlBKhsL/AOxk8CfiABRIEfgTeAfU4C7KmU+eLz+Ybj8fhRhG1KSFRKQHAnnluASawnKIQXI5i/jLlHTOMCKucJGgwGb8ATR5AX1yUkOyGgnDeejq0Xa+eB4+XCQRnmTktLywKS81WcHVeEXLUICBiODyFX6wyH9CBBubO41M6YoagWAeIw5D6HTLvTuHgDXwhz48rk5OQJnCtJma8WAeIu4AvIP1bOE9wxkxPeuI7D7IVUKnWt7KWFc6CUzRUSoBEP+o/xzslyoSAJ5kVbW1sKp+lr+Eq+1rfpPwR6e3vt20+OWicBIbcJAenP6U/4XyRM4Fjnbfg68uITnril67q7u9t+4F1AdubdLcrkBtuMgL4Jj0D+IuQDzvdlDE/QzoWJiYkuzOdtvT09PaWdblVYyNj8vk0imsR+rH8J3FuueKUsSz9gGCSO4aaNlQhU2mTn5n2vSYRA4FOIPON8B4S+g3wWx/dz8MYEkvOpHRMwieAzs8Eqis9652eA00aVFIX7D7W2tlrYfRzjMG7ej26bgIRIiLCeZK/X6IXPgCAKnMvAWyh8T4+MjJzQefX4bRMwG7ObOcLaj1U1yzI8P4Clb8Ph8G6cC9mpqSkfZWC8B546VlUCJhGGgQToERSkHYg9DT3KNbQh9E8jDKn/hYDzH4DJiQvKApEuTOdR1l1CIhbt80cTIK06wKNRr+caAVZMzCoGu0mvb9XyQMZ4pwgSS0BB1xgF7N7NApxVOAncAaGjwH5gFxAA/CyAtUG3ocyrCW3VikDOJABkdZ8G+Ms1DfwOfEMCNPIgEAFCLPUAH3/HNBFRFNCe2e7XmLIrQMqQXdSeyep5FjpjwLXtcsAylHLnNbd6POgdC4H1zQT/Br+QLX7mZr6IAAAAAElFTkSuQmCC");' +
         '}' +
         '#netflix-queue-sorter .nqs-icon-link#nqs-icon-undo {' +
@@ -2790,7 +2793,7 @@ QueueManager.prototype.getUiUnsupportedCssTemplate = function () {
 QueueManager.prototype.getUiHtmlTemplate = function () {
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.3</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.4</legend>' +
             '<div id="nqs-controls">' +
                 // JSLint does not like these javascript hrefs (true, they do
                 // not follow the semantic layered markup rules), but at least
@@ -2863,7 +2866,7 @@ QueueManager.prototype.getUiUnsupportedHtmlTemplate = function () {
     // TODO: FUTURE: add Opera,IE here once it's supported.
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.3</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.4</legend>' +
             'Your browser is not supported.  Please use the latest ' +
             'version of Chrome, Firefox or Safari.' +
         '</fieldset>';
@@ -3322,7 +3325,7 @@ QueueManager.prototype.assertUniqueDataPoints = function () {
 QueueManager.prototype.checkForUpdates = function () {
     function versionCheckHandler(response) {
         var upgradeElt,
-            version = 2.3,
+            version = 2.4,
             latestVersion = -1,
             result = /<b>Version:<\/b>\n([\d\.]+?)\n<br/.exec(
                     response.responseText);
