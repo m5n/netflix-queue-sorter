@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 2.4 2011-03-14
+// Version 2.5 2011-03-14
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     2.4
-// @description v2.4: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, and sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
+// @version     2.5
+// @description v2.5: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, and sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
 // @include     http://movies.netflix.com/Queue*
 // @include     http://www.netflix.com/Queue*
 // @include     http://movies.netflix.ca/Queue*
@@ -641,10 +641,8 @@ var NetflixDetailsPageRetriever = function () {
 // Netflix movie details URL.
 // Note: Chrome does not support cross-domain XHR so need to use server name!
 NetflixDetailsPageRetriever.DETAILS_PAGE_URL =
-        'http://www.netflix.com/Movie/{movieId}';
-        // TODO: If www gets fwd'ed to movies, do:
-        //'http://' + (window.location.host ? window.location.host
-        //    : 'movies.netflix.com') + '/Movie/{movieId}';
+        'http://' + (window.location.host ? window.location.host
+            : 'movies.netflix.com') + '/Movie/{movieId}';
 
 NetflixDetailsPageRetriever.prototype = new Retriever();
 
@@ -2793,7 +2791,7 @@ QueueManager.prototype.getUiUnsupportedCssTemplate = function () {
 QueueManager.prototype.getUiHtmlTemplate = function () {
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.4</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.5</legend>' +
             '<div id="nqs-controls">' +
                 // JSLint does not like these javascript hrefs (true, they do
                 // not follow the semantic layered markup rules), but at least
@@ -2866,7 +2864,7 @@ QueueManager.prototype.getUiUnsupportedHtmlTemplate = function () {
     // TODO: FUTURE: add Opera,IE here once it's supported.
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.4</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.5</legend>' +
             'Your browser is not supported.  Please use the latest ' +
             'version of Chrome, Firefox or Safari.' +
         '</fieldset>';
@@ -3325,7 +3323,7 @@ QueueManager.prototype.assertUniqueDataPoints = function () {
 QueueManager.prototype.checkForUpdates = function () {
     function versionCheckHandler(response) {
         var upgradeElt,
-            version = 2.4,
+            version = 2.5,
             latestVersion = -1,
             result = /<b>Version:<\/b>\n([\d\.]+?)\n<br/.exec(
                     response.responseText);
