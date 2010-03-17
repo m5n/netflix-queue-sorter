@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 2.5 2011-03-14
+// Version 2.6 2011-03-17
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     2.5
-// @description v2.5: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, and sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
+// @version     2.6
+// @description v2.6: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, and sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
 // @include     http://movies.netflix.com/Queue*
 // @include     http://www.netflix.com/Queue*
 // @include     http://movies.netflix.ca/Queue*
@@ -293,14 +293,17 @@ Retriever.prototype = {
         var value;
 
         if ("undefined" !== typeof GM_getValue &&
-                // Chrome defines this function, but it just outputs a msg.
-                GM_getValue.toString().indexOf("not supported") < 0) {
+                // FF4RC1 does not define GM_getValue.toString()...
+                // TODO: NOW: test again w/ final version of FF4.
+                ("undefined" === typeof GM_getValue.toString ||
+                    // Chrome defines this function, but it just outputs a msg.
+                    GM_getValue.toString().indexOf("not supported") < 0)) {
             value = GM_getValue(key);
         } else if ("undefined" !== typeof localStorage) {
             value = localStorage[key];
         }
 
-        if (undefined !== value) {
+        if (undefined !== value && null !== value) {
             value = JSON.parse(value);
         } else if (undefined !== defaultValue) {
             value = defaultValue;
@@ -312,8 +315,11 @@ Retriever.prototype = {
     },
     setCacheValue: function (key, value) {
         if ("undefined" !== typeof GM_setValue &&
-                // Chrome defines this function, but it just outputs a msg.
-                GM_setValue.toString().indexOf("not supported") < 0) {
+                // FF4RC1 does not define GM_setValue.toString()...
+                // TODO: NOW: test again w/ final version of FF4.
+                ("undefined" === typeof GM_setValue.toString ||
+                    // Chrome defines this function, but it just outputs a msg.
+                    GM_setValue.toString().indexOf("not supported") < 0)) {
             GM_setValue(key, JSON.stringify(value));
         } else if ("undefined" !== typeof localStorage) {
             localStorage[key] = JSON.stringify(value);
@@ -321,8 +327,11 @@ Retriever.prototype = {
     },
     deleteCacheValue: function (key) {
         if ("undefined" !== typeof GM_deleteValue &&
-                // Chrome defines this function, but it just outputs a msg.
-                GM_deleteValue.toString().indexOf("not supported") < 0) {
+                // FF4RC1 does not define GM_deleteValue.toString()...
+                // TODO: NOW: test again w/ final version of FF4.
+                ("undefined" === typeof GM_deleteValue.toString ||
+                    // Chrome defines this function, but it just outputs a msg.
+                    GM_deleteValue.toString().indexOf("not supported") < 0)) {
             GM_deleteValue(key);
         } else if ("undefined" !== typeof localStorage) {
             delete localStorage[key];
@@ -2577,6 +2586,7 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
             config: [{command: 'sort', fields: ['language', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_ASC, QueueManager.SORT_ASC]}]
         },
+/* TODO: NOW: no longer available?
         {
             id: 'd150',
             text: 'Date Added',
@@ -2585,6 +2595,7 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
             // Note: Chrome needs 'order' as secondary sort to keep current order.
             config: [{command: 'sort', fields: ['dateAdded', 'order'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_ASC, QueueManager.SORT_ASC], defaultOrder: ['{date}']}]
         },
+*/
         {
             // Add sort by title to make sure series discs are in asc order.
             id: 'd160',
@@ -2791,7 +2802,7 @@ QueueManager.prototype.getUiUnsupportedCssTemplate = function () {
 QueueManager.prototype.getUiHtmlTemplate = function () {
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.5</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.6</legend>' +
             '<div id="nqs-controls">' +
                 // JSLint does not like these javascript hrefs (true, they do
                 // not follow the semantic layered markup rules), but at least
@@ -2864,7 +2875,7 @@ QueueManager.prototype.getUiUnsupportedHtmlTemplate = function () {
     // TODO: FUTURE: add Opera,IE here once it's supported.
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.5</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.6</legend>' +
             'Your browser is not supported.  Please use the latest ' +
             'version of Chrome, Firefox or Safari.' +
         '</fieldset>';
@@ -3323,7 +3334,7 @@ QueueManager.prototype.assertUniqueDataPoints = function () {
 QueueManager.prototype.checkForUpdates = function () {
     function versionCheckHandler(response) {
         var upgradeElt,
-            version = 2.5,
+            version = 2.6,
             latestVersion = -1,
             result = /<b>Version:<\/b>\n([\d\.]+?)\n<br/.exec(
                     response.responseText);
