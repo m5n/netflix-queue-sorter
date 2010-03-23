@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 2.6 2011-03-17
+// Version 2.7 2011-03-23
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     2.6
-// @description v2.6: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, and sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
+// @version     2.7
+// @description v2.7: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, and sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
 // @include     http://movies.netflix.com/Queue*
 // @include     http://www.netflix.com/Queue*
 // @include     http://movies.netflix.ca/Queue*
@@ -742,6 +742,8 @@ NetflixDetailsPageRetriever.prototype.extractLength = function (id, dom) {
         txt = elts[0].innerHTML;
         if (/(\d+) minutes/.test(txt)) {
             len = parseInt(RegExp.$1, 10);
+
+        // "Old" style page (regular size box image).
         } else if (/(\d+) discs/.test(txt)) {
             // Find duration of first episode, if any.
             // Skip first elt as we already looked at that.
@@ -755,6 +757,17 @@ NetflixDetailsPageRetriever.prototype.extractLength = function (id, dom) {
                     }
                 }
             }
+
+        // "New" style page (oversized image).
+        } else if (/Seasons /.test(txt)) {
+            // Find duration of first episode, if any.
+            // Skip first elt as we already looked at that.
+            for (ee = 1; ee < elts.length; ee += 1) {
+                if (/(\d+)m/.test(elts[ee].innerHTML)) {
+                    len = parseInt(RegExp.$1, 10);
+                    break;
+                }
+            }
         }
     }
 
@@ -763,14 +776,15 @@ NetflixDetailsPageRetriever.prototype.extractLength = function (id, dom) {
 
 NetflixDetailsPageRetriever.prototype.extractMaturityRating = function (
             dom, className) {
-    var ee,
-        rating,
-        elts = dom.getElementsByClassName('maturityRating');
+    var rating,
+        elts = dom.getElementsByClassName(className);
 
-    for (ee = 0; ee < elts.length; ee += 1) {
-        if (elts[ee].getAttribute('class').indexOf(className) >= 0) {
-            rating = elts[ee].getElementsByTagName('a')[0].innerHTML;
-            break;
+    if (elts.length > 0) {
+        // "Old" style pages have a link, "new" style do not.
+        if (elts[0].getElementsByTagName('a').length > 0) {
+            rating = elts[0].getElementsByTagName('a')[0].innerHTML;
+        } else {
+            rating = elts[0].innerHTML;
         }
     }
 
@@ -874,7 +888,19 @@ NetflixDetailsPageRetriever.prototype.extractMediaFormat = function (id, dom) {
         formats = [];
 
     if (undefined === formatElt) {
-        throw new Error(id + ': format not found');
+        // Could be "new" format of details page.
+        // TODO: NOW: figure out where the HD/BluR/etc is.
+        if (document.getElementById('discEpisodesToggle')) {
+            formats.push('DVD');
+        }
+        if (document.getElementById('edEpisodesToggle')) {
+            formats.push('STREAMING');
+        }
+
+        if (0 === formats.length) {
+            // TODO: NOW: the code above does not work.  Avoid exception.
+            //throw new Error(id + ': format not found');
+        }
     } else {
         // Check DVD availability.
         if (/DVD/.test(formatElt.innerHTML) &&
@@ -2802,7 +2828,7 @@ QueueManager.prototype.getUiUnsupportedCssTemplate = function () {
 QueueManager.prototype.getUiHtmlTemplate = function () {
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.6</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.7</legend>' +
             '<div id="nqs-controls">' +
                 // JSLint does not like these javascript hrefs (true, they do
                 // not follow the semantic layered markup rules), but at least
@@ -2875,7 +2901,7 @@ QueueManager.prototype.getUiUnsupportedHtmlTemplate = function () {
     // TODO: FUTURE: add Opera,IE here once it's supported.
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.6</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.7</legend>' +
             'Your browser is not supported.  Please use the latest ' +
             'version of Chrome, Firefox or Safari.' +
         '</fieldset>';
@@ -3334,7 +3360,7 @@ QueueManager.prototype.assertUniqueDataPoints = function () {
 QueueManager.prototype.checkForUpdates = function () {
     function versionCheckHandler(response) {
         var upgradeElt,
-            version = 2.6,
+            version = 2.7,
             latestVersion = -1,
             result = /<b>Version:<\/b>\n([\d\.]+?)\n<br/.exec(
                     response.responseText);
