@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 1.14, 2010-12-21
+// Version 1.15, 2010-12-22
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,9 +11,10 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     1.14
-// @description v1.14: Sort your Netflix queue by movie title, length, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
+// @version     1.15
+// @description v1.15: Sort your Netflix queue by movie title, length, genre, average rating, star/suggested/user rating, availability, or playability.  Includes options to shuffle/randomize or reverse your queue.
 // @include     http://movies.netflix.com/Queue*
+// @include     http://www.netflix.com/Queue*
 // ==/UserScript==
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -650,10 +651,10 @@ var NetflixQueueSorter = (function () {
         // wherever you are in the string until the end-of-line, and any
         // lines underneath it.  To continue matching on another line,
         // skip into the line first using ".*?".
-        var regex = /name="OR(\d+)"(?:.*?\n)*?.*?class="wn">(.*?)<\/td/g;
+        var regex = /name="OR(\d+)"(?:.*?\n)*?.*?class="wn">((?:.*?\n)*?.*?)<\/td/g;
         while (regex.test(text)) {
             var id = RegExp.$1;
-            var playable = RegExp.$2.length !== 0;
+            var playable = trim(RegExp.$2).length !== 0;
             var record = {
                 "id": id,
                 "play": playable,
@@ -726,6 +727,10 @@ var NetflixQueueSorter = (function () {
         setOrder("origPos");
     }
 
+    function trim(str) {
+        return str.replace(/^\s*(\S*(?:\s+\S+)*)\s*$/, "$1");
+    }
+
     function sortByAvailability() {
         sortInfo = [];
 
@@ -740,10 +745,10 @@ var NetflixQueueSorter = (function () {
         // wherever you are in the string until the end-of-line, and any
         // lines underneath it.  To continue matching on another line,
         // skip into the line first using ".*?".
-        var regex = /name="OR(\d+)"(?:.*?\n)*?.*?class="(av|km)[ "].*?>(.*?)<\/td/g;
+        var regex = /name="OR(\d+)"(?:.*?\n)*?.*?class="(av|km)[ "].*?>((?:.*?\n)*?.*?)<\/td/g;
         while (regex.test(text)) {
             var id = RegExp.$1;
-            var avail = RegExp.$3;
+            var avail = trim(RegExp.$3);
             var record = {
                 "id": id,
                 "avail": avail.toUpperCase(),
