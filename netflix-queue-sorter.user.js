@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 2.1 2010-12-31
+// Version 2.2 2011-01-12
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,13 +11,17 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     2.1
-// @description v2.1: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, and sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
+// @version     2.2
+// @description v2.2: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, and sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
 // @include     http://movies.netflix.com/Queue*
 // @include     http://www.netflix.com/Queue*
+// @include     http://movies.netflix.ca/Queue*
+// @include     http://www.netflix.ca/Queue*
 // Google Chrome uses @match in stead of @include.
 // @match       http://movies.netflix.com/Queue*
 // @match       http://www.netflix.com/Queue*
+// @match       http://movies.netflix.ca/Queue*
+// @match       http://www.netflix.ca/Queue*
 // ==/UserScript==
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -33,7 +37,7 @@
 // availability, playability, language, etc.
 //
 ///////////////////////////////////////////////////////////////////////////////
-/*global ActiveXObject, alert, clearTimeout, confirm, console, document, GM_getValue, GM_log, GM_setValue, GM_registerMenuCommand, GM_xmlhttpRequest, localStorage, setTimeout, window, XMLHttpRequest */   // Satisfy JSLint.
+/*global ActiveXObject, alert, clearTimeout, confirm, console, document, GM_deleteValue, GM_getValue, GM_log, GM_setValue, GM_xmlhttpRequest, localStorage, setTimeout, window, XMLHttpRequest */   // Satisfy JSLint.
 
 // JSLint would like us to insert the "use strict" pragma as the first
 // statement of a function. Since GM scripts already get wrapped to limit their
@@ -51,7 +55,7 @@
 // Development-only code for developing and testing outside of the GM env.
 /*
 var gmCache = {
-    debug: true,   // Always true for development mode.
+    'debug-mode': true,   // Always true for development mode.
     'auto-update': false   // Always false for development mode.
 };
 function GM_getValue(key) {
@@ -293,7 +297,7 @@ Retriever.prototype = {
             value = localStorage[key];
         }
 
-        if (value) {
+        if (undefined !== value) {
             value = JSON.parse(value);
         } else if (undefined !== defaultValue) {
             value = defaultValue;
@@ -310,6 +314,15 @@ Retriever.prototype = {
             GM_setValue(key, JSON.stringify(value));
         } else if ("undefined" !== typeof localStorage) {
             localStorage[key] = JSON.stringify(value);
+        }
+    },
+    deleteCacheValue: function (key) {
+        if ("undefined" !== typeof GM_deleteValue &&
+                // Chrome defines this function, but it just outputs a msg.
+                GM_deleteValue.toString().indexOf("not supported") < 0) {
+            GM_deleteValue(key);
+        } else if ("undefined" !== typeof localStorage) {
+            delete localStorage[key];
         }
     },
 
@@ -390,9 +403,7 @@ Retriever.prototype = {
     // Does a date compare for dates (order should contain "{date}" for date
     // comparison), but otherwise does an exact match; caller should make sure
     // to pass case agnostic strings.
-    // Note: all args after 'order' are needed to make Chrome sort correctly,
-    // that is: keep same items in the current order.
-    customOrderSortFn: function (a, b, order, moreLevels, dir, ao, bo) {
+    customOrderSortFn: function (a, b, order) {
         var aIdx = Number.MAX_VALUE,
             bIdx = Number.MAX_VALUE,
             dateA,
@@ -449,12 +460,6 @@ Retriever.prototype = {
         if (undefined !== dateA && undefined !== dateB) {
             aIdx = dateA.getTime();
             bIdx = dateB.getTime();
-        }
-
-        // Note: the next block is to make Chrome keep same items in place.
-        if (bIdx === aIdx && false === moreLevels) {
-            // 1 means ASC. TODO: NOW: use constant
-            return (1 === dir) ? ao - bo : bo - ao;
         }
 
         // Lower index goes before higher index.
@@ -528,25 +533,7 @@ Retriever.prototype = {
         // as some retrievers always can return the latest data w/o penalty,
         // e.g. queueRetriever.
 
-        var forceRefresh = false,    // TODO: CONFIG: make this config option:
-                                     //       whether or not to use cache
-                                     //       If always use cache, say that
-                                     //       this may make your ratings data
-                                     //       stale for movies that are in the
-                                     //       queue for a long time
-                                     //       Couple of options needed:
-                                     //       1. use cache yes/no
-                                     //       2. if yes:
-                                     //          a. force refresh yes/no
-                                     //          b. display force refresh 
-                                     //             checkbox in UI yes/no
-                                     // TODO: CONFIG: MUST ship w/ cache off
-                                     //       option in case storing all that
-                                     //       data is a drag on browser
-                                     //       performance.
-                                     // TODO: CONFIG: MUST ship w/ show info
-                                     //       icons in case that
-                                     //       is a drag on browser performance.
+        var forceRefresh = this.getCacheValue('force-refresh', false),
             fieldsToRetrieve = [],
             ff,
             cc,
@@ -986,14 +973,9 @@ var QueueManager = function () {
         /*
         data point    | fn to get value from tr elt     | no err if empty? | shown in q? | expose to user?  | display string
         */
-
-        // User could make edits to list order inputs so we cannot base our
-        // sort on that.  Instead, the order property is always added to queue
-        // data automatically.   See QueueManager.retrieveData().
-        //order:        { extractFn: 'extractOrder',        maybeEmpty: false, shown:  true, selectable: false, display: 'List Order' },
-
-        movieId:      { extractFn: 'extractMovieId',      maybeEmpty: false, shown: false, selectable: false, display: 'Movie ID' },
-        seriesId:     { extractFn: 'extractSeriesId',     maybeEmpty:  true, shown: false, selectable: false, display: 'Series ID' },
+        order:        { extractFn: 'extractOrder',        maybeEmpty: false, shown:  true, selectable:  true, display: 'List Order' },
+        movieId:      { extractFn: 'extractMovieId',      maybeEmpty: false, shown: false, selectable:  false, display: 'Movie ID' },
+        seriesId:     { extractFn: 'extractSeriesId',     maybeEmpty:  true, shown: false, selectable:  false, display: 'Series ID' },
         title:        { extractFn: 'extractTitle',        maybeEmpty: false, shown:  true, selectable:  true, display: 'Movie Title' },
         playability:  { extractFn: 'extractPlayability',  maybeEmpty:  true, shown:  true, selectable:  true, display: 'Playability' },
         starRating:   { extractFn: 'extractStarRating',   maybeEmpty: false, shown:  true, selectable:  true, display: 'Star Rating' },
@@ -1031,7 +1013,7 @@ var QueueManager = function () {
     this.cachedData = {};   // Initialized in showCachedData().
 
     // Should a button press auto-update the queue?
-    this.autoUpdate = false;   // Initialized in initConfigOptions().
+    this.autoUpdate = true;   // Initialized in initConfigOptions().
 
     Retriever.call(this, 'netflix-queue', config);
 };
@@ -1050,7 +1032,7 @@ QueueManager.prototype = new Retriever();
 QueueManager.prototype.initConfigOptions = function () {
     var rr;
 
-    this.isDebug = this.getCacheValue('debug', false);
+    this.isDebug = this.getCacheValue('debug-mode', false);
     // Also apply to all retrievers.
     for (rr = 0; rr < this.allNonQueueRetrievers.length; rr += 1) {
         this.allNonQueueRetrievers[rr].isDebug = this.isDebug;
@@ -1099,9 +1081,26 @@ QueueManager.prototype.extractSeriesId = function (trElt) {
 };
 
 QueueManager.prototype.extractOrder = function (trElt) {
-    var elt = trElt.getElementsByClassName('pr')[0];
-    elt = elt.getElementsByClassName('o')[0];
-    return Number(elt.value);
+    // User could have changed the numbers in the order fields,
+    // so don't use value in text field.  The hidden field has
+    // the original order value.
+    var elts = trElt.getElementsByClassName('pr'),
+        ee,
+        result;
+
+    elts = elts[0].getElementsByTagName('input');
+    for (ee = 0; ee < elts.length; ee += 1) {
+        if ('hidden' === elts[ee].getAttribute('type')) {
+            result = Number(elts[ee].value);
+            break;
+        }
+    }
+
+    if (undefined === result) {
+        throw new Error('Could not extract order: ' + trElt.innerHTML);
+    }
+
+    return result;
 };
 
 QueueManager.prototype.extractTitle = function (trElt) {
@@ -1115,7 +1114,7 @@ QueueManager.prototype.extractTitle = function (trElt) {
 
         // The articles are used "as-is", so there must be a space after
         // each one in most cases.
-        // Note: as of v2.1, users can no longer customize the articles.
+        // Note: as of v2.x, users can no longer customize the articles.
         articles = [
             'A ',
             'AN ',
@@ -1262,37 +1261,28 @@ QueueManager.prototype.applyToSelectedRowsOnly = function (value) {
     }
 };
 
-QueueManager.prototype.getInputValueAsInt = function (id) {
+QueueManager.prototype.inputValueAsInt = function (id, value) {
     var elt = document.getElementById(id);
-    return (elt && /^\d+$/.test(elt.value)) ?
-            parseInt(elt.value, 10) - 1 : undefined;
+    if (undefined !== value) {
+        // Setter.
+        elt.value = value + 1;
+    } else {
+        // Getter.
+        return (elt && /^\d+$/.test(elt.value)) ?
+                parseInt(elt.value, 10) - 1 : undefined;
+    }
 };
 
-QueueManager.prototype.getMinSelectedRowIndex = function () {
-    return this.getInputValueAsInt('nqs-sort-limit-row-min');
+QueueManager.prototype.minSelectedRowIndex = function (value) {
+    return this.inputValueAsInt('nqs-sort-limit-row-min', value);
 };
 
-QueueManager.prototype.getMaxSelectedRowIndex = function () {
-    return this.getInputValueAsInt('nqs-sort-limit-row-max');
+QueueManager.prototype.maxSelectedRowIndex = function (value) {
+    return this.inputValueAsInt('nqs-sort-limit-row-max', value);
 };
 
 QueueManager.prototype.getListOrderInputs = function () {
     return document.getElementsByClassName('o');
-};
-
-QueueManager.prototype.getOriginalListOrderValue = function (orderElt) {
-    var elts = orderElt.parentNode.getElementsByTagName('input'),
-        ee,
-        result;
-
-    for (ee = 0; ee < elts.length; ee += 1) {
-        if ('hidden' === elts[ee].getAttribute('type')) {
-            result = elts[ee].value;
-            break;
-        }
-    }
-
-    return result;
 };
 
 QueueManager.prototype.getTrEltForListOrderInput = function (orderElt) {
@@ -1391,8 +1381,8 @@ QueueManager.prototype.retrieveData = function (fields, cachedData,
     // Note: validateUserInput() already made sure the option and entered
     // limits are valid.
     if (this.applyToSelectedRowsOnly()) {
-        minRow = this.getMinSelectedRowIndex();
-        maxRow = this.getMaxSelectedRowIndex();
+        minRow = this.minSelectedRowIndex();
+        maxRow = this.maxSelectedRowIndex();
     } else {
         minRow = 0;
         maxRow = trElts.length - 1;
@@ -1419,10 +1409,6 @@ QueueManager.prototype.retrieveData = function (fields, cachedData,
             }
         }
 
-        // User could make edits to list order inputs so we cannot base our
-        // sort on that.  Special case that field.
-        data.order = rr + 1;
-
         result.push(data);
     }
 
@@ -1438,9 +1424,7 @@ QueueManager.prototype.getSortFn = function (buttonConfig) {
             level = 0,
             order,
             field,
-            sortFn,
-            dir,
-            moreLevels;
+            sortFn;
 
         // Custom order of values, if any.
         if (undefined !== buttonConfig.cacheKey) {
@@ -1455,18 +1439,12 @@ QueueManager.prototype.getSortFn = function (buttonConfig) {
         while (0 === result && level < buttonConfig.fields.length) {
             field = buttonConfig.fields[level];
             sortFn = self[buttonConfig.sortFns[level]];
-            dir = buttonConfig.dirs[level];
 
-            // Note: all args after 'order' are needed to make Chrome sort
-            // correctly, that is: keep same items in the current order.
-            // TODO: NOW: passing dir is a hack; avoid that.
-            moreLevels = level < buttonConfig.fields.length - 1;
-            result = sortFn(a[field], b[field], order,
-                    moreLevels, dir, a.order, b.order);
+            result = sortFn(a[field], b[field], order);
 
             // Note: the values of asc (1) and desc (-1) were specifically
             // chosen to make this statement as efficient as possible.
-            result *= dir;
+            result *= buttonConfig.dirs[level];
 
             level += 1;
         }
@@ -1482,7 +1460,6 @@ QueueManager.prototype.commitSort = function (cache) {
         minRow,
         maxRow,
         idx,
-        origValue,
         origOrder,
         orderChanged;
 
@@ -1495,11 +1472,19 @@ QueueManager.prototype.commitSort = function (cache) {
 
     oElts = this.getListOrderInputs();
     if (this.applyToSelectedRowsOnly()) {
-        minRow = this.getMinSelectedRowIndex();
-        maxRow = this.getMaxSelectedRowIndex();
+        minRow = this.minSelectedRowIndex();
+        maxRow = this.maxSelectedRowIndex();
+
+        // Save min/max row so they can be displayed when the page loads.
+        this.setCacheValue('last-min-row-' + this.getQueueId(), minRow);
+        this.setCacheValue('last-max-row-' + this.getQueueId(), maxRow);
     } else {
         minRow = 0;
         maxRow = oElts.length - 1;
+
+        // Don't save min/max row.
+        this.deleteCacheValue('last-min-row-' + this.getQueueId());
+        this.deleteCacheValue('last-max-row-' + this.getQueueId());
     }
 
     // Save current order for undo purposes.
@@ -1524,25 +1509,29 @@ QueueManager.prototype.commitSort = function (cache) {
     }
 
     if (orderChanged) {
-        // TODO: NOW: is this really needed?  reload does not work?
+        // TODO: FUTURE: is this really needed?  reload does not work?
+        this.setCacheValue('reload-trigger', true);   // TODO: NOW: remove trigger
         // Make Netflix realize the ordering has changed.
         // (Do this for one row only, otherwise it slows down too much.)
         // Unfortunately focusing an input moves the page down to that input.
         // Since the user is most likely near the top of the page (that's where
         // the sort button was pressed), find the highest changed row.
+        /*
         for (rr = minRow; rr <= maxRow; rr += 1) {
-            origValue = this.getOriginalListOrderValue(oElts[rr]);
-            if (origValue !== oElts[rr].value) {
+            if (rr + 1 !== oElts[rr].value) {   // Don't use value in text field!
                 oElts[rr].focus();   // Could move page down.
                 oElts[rr].blur();
                 oElts[0].focus();   // Moves page back up.
                 oElts[0].blur();
-                break;   // One time only.
+                break;   // Only do this once.
             }
         }
+        */
         if (this.autoUpdate) {
             this.setStatus('[Reloading page...]');
-            this.updateQueueButton.click();
+            // TODO: NOW: using form submit does not require row change trigger above.
+            //this.updateQueueButton.click();
+            document.getElementById('MainQueueForm').submit();
         } else {
             this.switchToUserMode();
             this.setStatus('[Click "' + this.getUpdateButtonText() + '".]');
@@ -1767,9 +1756,6 @@ QueueManager.prototype.retrieveExternalData = function (sortableData,
             }
             for (dd in sortableData[pp]) {
                 if (sortableData[pp].hasOwnProperty(dd) &&
-                        // Note: the "order" property is managed differently;
-                        // see QueueManager's config object.
-                        'order' !== dd &&
                         // Note: "this" = current retriever,
                         // "self" = queue manager.
                         undefined === self.allDataPointConfig[dd]) {
@@ -1916,7 +1902,7 @@ QueueManager.prototype.retrieveQueueDataCallback = function (data, configObj,
                     // This is a bit of a corner case anyway, and rating data
                     // can easily get stale with a sizeable queue, so let's
                     // not use cachedData for this.
-                    // TODO: CONFIG: make this a configurable option
+                    // TODO: FUTURE: make this a configurable option
                     /*
                     cacheData = this.cachedData[data[rr].movieId];
                     if (undefined !== cacheData) {
@@ -2120,8 +2106,8 @@ QueueManager.prototype.validateUserInput = function () {
     // TODO: FUTURE: find a way of selecting rows where user never inputs
     //       anything so this can be avoided, e.g. right-click menus on rows.
     if (this.applyToSelectedRowsOnly()) {
-        minRow = this.getMinSelectedRowIndex();
-        maxRow = this.getMaxSelectedRowIndex();
+        minRow = this.minSelectedRowIndex();
+        maxRow = this.maxSelectedRowIndex();
 
         if (undefined === minRow || minRow < 0 ||
                 undefined === maxRow || maxRow < 0 || maxRow > len - 1) {
@@ -2247,6 +2233,7 @@ QueueManager.prototype.prepSort = function (evt) {
         this.debug('prepSort: ' + JSON.stringify(configObj));
     }
 
+/* TODO: NOW: no longer needed? 
     if (window.location.href.indexOf('movies.netflix.com') > 0) {
         // Movies.netfix.com does not return new sort ordering immediately.
         // Best results are on www.netflix.com
@@ -2261,6 +2248,7 @@ QueueManager.prototype.prepSort = function (evt) {
         }
         return;
     }
+*/
 
     // Hide Netflix' "Your Queue has been reordered" message.
     elts = document.getElementsByClassName('svfmsg-s');
@@ -2294,7 +2282,10 @@ QueueManager.prototype.prepSort = function (evt) {
         // No sort, just a change to the row order.
         // This is quick, and to avoid confusion, do not set a status message.
         // Note: row order is always added to queue data automatically.
-        fieldsToRetrieve = [];
+        // TODO: NOW: better is to add 'order' as a field to shuffle/rev to
+        //       avoid this IF, or change it to test for empty fields obj.
+        //       Be careful not to extract any more fields than we really need.
+        fieldsToRetrieve = ['order'];
         retrievers = [];
     } else {
         this.setStatus('[Retrieving data...]');
@@ -2352,24 +2343,21 @@ QueueManager.prototype.prepSort = function (evt) {
 };
 
 QueueManager.prototype.doConfigure = function () {
+    // TODO: NOW: finish implementation
     alert('Comming soon: a UI for you to add your own sort buttons.');
-    // TODO: NOW: add this UI.
+    return;
 
-    // TODO: for debug option, ref to http://wiki.greasespot.net/GM_log for
-    //       how to make debug msgs appear.
+    var controlsUiElt = document.getElementById('nqs-controls'),
+        buttonsUiElt = document.getElementById('nqs-buttons'),
+        configUiElt = document.getElementById('nqs-config');
 
-    // TODO: CONFIG: also add a clear cache button to remove all/specific
-    //       GM_setValue's.
+    controlsUiElt.style.display = 'none';
+    buttonsUiElt.style.display = 'none';
+    configUiElt.style.display = 'block';
 
-    // TODO: CONFIG: add config option for always selecting/unselecting row
-    //       limits after sort
-
-    // TODO: CONFIG: add option for preferred format (HD, DVD, Blue-ray) for
+    // TODO: FUTURE: add option for preferred format (HD, DVD, Blue-ray) for
     //       DVD queue as details page could have different values for each
     //       format (e.g. length).
-
-    // TODO: CONFIG: search for this.getCacheValue to make sure there are 
-    //       options in the config UI for them.
 };
 
 QueueManager.prototype.doCancelSort = function () {
@@ -2432,7 +2420,8 @@ QueueManager.prototype.assertCorrectButtonConfig = function (config) {
         ii,
         num;
 
-    if (undefined !== config.text &&
+    if (undefined !== config.id &&
+            undefined !== config.text &&
             undefined !== config.title &&
             undefined !== config.queues &&
             undefined !== config.config) {
@@ -2459,16 +2448,8 @@ QueueManager.prototype.assertCorrectButtonConfig = function (config) {
     }
 };
 
-QueueManager.prototype.loadButtonConfig = function () {
-    // TODO: NOW: don't make default button set configurable (otherwise you
-    // cannot add new buttons in the config) but let users show/hide them.
-    // Use different cache key for user-defined buttons.
-
-    var config = this.getCacheValue('button-config', [
-        // Note: if you make changes to this default config, users won't pick
-        // them up unless you ask them to clear their retriever config cache.
-        // Well, better would be to automatically migrate user's data.
-
+QueueManager.prototype.getDefaultButtonConfig = function () {
+    return [
         // Config must be of the form:
         // [
         //     {command: reverse|shuffle|sort},
@@ -2480,37 +2461,45 @@ QueueManager.prototype.loadButtonConfig = function () {
         // customOrderSortFn is being used.  Only pass cacheKey if that default
         // order can be customized by the user.
         {
+            id: 'd10',
             text: 'Shuffle',
             title: 'Shuffle your queue into a random order',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
             config: [{command: 'shuffle'}]
         },
         {
+            id: 'd20',
             text: 'Reverse',
             title: 'Reverse the current list order',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
             config: [{command: 'reverse'}]
         },
         {
+            id: 'd30',
             text: 'Title',
             title: 'Sort your queue alphabetically by movie title',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
             config: [{command: 'sort', fields: ['title'], sortFns: ['defaultSortFn'], dirs: [QueueManager.SORT_ASC]}]
         },
         {
+            id: 'd40',
             text: 'Instant \u2191',   // Use Unicode in stead of HTML entity.
             title: 'Move instantly playable movies to the top of your queue',
             queues: [QueueManager.QUEUE_DVD],
-            config: [{command: 'sort', fields: ['playability'], sortFns: ['customOrderSortFn'], dirs: [QueueManager.SORT_DESC], defaultOrder: ['NOW', '{date}']}]
+            // Note: Chrome needs 'order' as secondary sort to keep current order.
+            config: [{command: 'sort', fields: ['playability', 'order'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], defaultOrder: ['NOW', '{date}']}]
         },
         {
+            id: 'd50',
             text: 'Instant \u2193',   // Use Unicode in stead of HTML entity.
             title: 'Move instantly playable movies to the bottom of your queue',
             queues: [QueueManager.QUEUE_DVD],
-            config: [{command: 'sort', fields: ['playability'], sortFns: ['customOrderSortFn'], dirs: [QueueManager.SORT_ASC], defaultOrder: ['NOW', '{date}']}]
+            // Note: Chrome needs 'order' as secondary sort to keep current order.
+            config: [{command: 'sort', fields: ['playability', 'order'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_ASC, QueueManager.SORT_ASC], defaultOrder: ['NOW', '{date}']}]
         },
         {
             // Add sort by title to make sure series discs are in asc order.
+            id: 'd60',
             text: 'Star Rating',
             title: 'Sort your queue by star rating from high to low',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
@@ -2518,6 +2507,7 @@ QueueManager.prototype.loadButtonConfig = function () {
         },
         {
             // Add sort by title to make sure series discs are in asc order.
+            id: 'd70',
             text: 'Genre',
             title: 'Sort your queue alphabetically by genre',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
@@ -2525,80 +2515,147 @@ QueueManager.prototype.loadButtonConfig = function () {
         },
         {
             // Add sort by title to make sure series discs are in asc order.
+            id: 'd80',
             text: 'TV/Movies',
-            title: 'Move the television genre above movie genres',
+            title: 'Move the television genre above movie genres and sort by title',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
             config: [{command: 'sort', fields: ['genre', 'title'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], cacheKey: 'sort-order-custom-genre-' + this.getQueueId(), defaultOrder: ['Television']}]
         },
         {
             // Asc direction for availability sort intuitively means longer
             // and longer away from "now", so we want desc sort here.
+            id: 'd90',
             text: 'Availability',
             title: 'Move the most desirable movies to the top of your queue',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
-            config: [{command: 'sort', fields: ['availability'], sortFns: ['customOrderSortFn'], dirs: [QueueManager.SORT_DESC], cacheKey: 'sort-order-availability-' + this.getQueueId(), defaultOrder: ['{date}', 'VERY LONG WAIT', 'LONG WAIT', 'SHORT WAIT', 'N/A']}]
+            // Note: Chrome needs 'order' as secondary sort to keep current order.
+            config: [{command: 'sort', fields: ['availability', 'order'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], cacheKey: 'sort-order-availability-' + this.getQueueId(), defaultOrder: ['{date}', 'VERY LONG WAIT', 'LONG WAIT', 'SHORT WAIT', 'N/A']}]
         },
         {
             // Add sort by title to make sure series discs are in asc order.
-            text: 'Length *',
+            id: 'd100',
+            text: 'Length',
             title: 'Sort your queue by length from short to long',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
             config: [{command: 'sort', fields: ['length', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_ASC, QueueManager.SORT_ASC]}]
         },
         {
             // Add sort by title to make sure series discs are in asc order.
-            text: 'Year *',
+            id: 'd110',
+            text: 'Year',
             title: 'Sort your queue by year from new to old',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
             config: [{command: 'sort', fields: ['year', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC]}]
         },
         {
             // Format sort for Instant queue.
-            text: 'Format *',
+            id: 'd120',
+            text: 'Format',
             title: 'Move high-definition movies above standard-definition movies',
             queues: [QueueManager.QUEUE_INSTANT],
-            config: [{command: 'sort', fields: ['mediaFormat'], sortFns: ['customOrderSortFn'], dirs: [QueueManager.SORT_DESC], cacheKey: 'sort-order-mediaformat-' + QueueManager.QUEUE_INSTANT, defaultOrder: ['HD', 'STREAMING']}]   // Favor HD over SD formats.
+            // Note: Chrome needs 'order' as secondary sort to keep current order.
+            config: [{command: 'sort', fields: ['mediaFormat', 'order'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], cacheKey: 'sort-order-mediaformat-' + QueueManager.QUEUE_INSTANT, defaultOrder: ['HD', 'STREAMING']}]   // Favor HD over SD formats.
         },
         {
             // Format sort for DVD queue.
-            text: 'Format *',
+            id: 'd130',
+            text: 'Format',
             title: 'Move high-definition movies above standard-definition movies',
             queues: [QueueManager.QUEUE_DVD],
-            config: [{command: 'sort', fields: ['mediaFormat'], sortFns: ['customOrderSortFn'], dirs: [QueueManager.SORT_DESC], cacheKey: 'sort-order-mediaformat-' + QueueManager.QUEUE_DVD, defaultOrder: ['BLU-RAY', 'DVD']}]   // Favor HD over SD formats.
+            // Note: Chrome needs 'order' as secondary sort to keep current order.
+            config: [{command: 'sort', fields: ['mediaFormat', 'order'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], cacheKey: 'sort-order-mediaformat-' + QueueManager.QUEUE_DVD, defaultOrder: ['BLU-RAY', 'DVD']}]   // Favor HD over SD formats.
         },
         {
             // Add sort by title to make sure series discs are in asc order.
-            text: 'Language *',
+            id: 'd140',
+            text: 'Language',
             title: 'Sort your queue alphabetically by language',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
             config: [{command: 'sort', fields: ['language', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_ASC, QueueManager.SORT_ASC]}]
         },
         {
-            text: 'Date Added *',
+            id: 'd150',
+            text: 'Date Added',
             title: 'Sort your queue by the date movies were added to the queue',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
-            config: [{command: 'sort', fields: ['dateAdded'], sortFns: ['customOrderSortFn'], dirs: [QueueManager.SORT_ASC], defaultOrder: ['{date}']}]
+            // Note: Chrome needs 'order' as secondary sort to keep current order.
+            config: [{command: 'sort', fields: ['dateAdded', 'order'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_ASC, QueueManager.SORT_ASC], defaultOrder: ['{date}']}]
         },
         {
             // Add sort by title to make sure series discs are in asc order.
-            text: 'Star/Avg Rating *',
+            id: 'd160',
+            text: 'Star/Avg Rating',
             title: 'Sort your queue by star rating (primary) and by average rating (secondary) from high to low',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
             config: [{command: 'sort', fields: ['starRating', 'avgRating', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_DESC, QueueManager.SORT_ASC]}]
         },
         {
             // Add sort by title to make sure series discs are in asc order.
-            text: 'Average Rating *',
+            id: 'd170',
+            text: 'Average Rating',
             title: 'Sort your queue by average rating from high to low',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
             config: [{command: 'sort', fields: ['avgRating', 'starRating', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_DESC, QueueManager.SORT_ASC]}]
         }
-    ]),
-    ii;
+    ];
+};
 
-    // Do a sanity test on the config object.
-    for (ii = 0; ii < config.length; ii += 1) {
-        this.assertCorrectButtonConfig(config[ii]);
+QueueManager.prototype.loadButtonConfig = function () {
+    var defaultButtonConfig = this.getDefaultButtonConfig(),
+        userButtonConfig,
+        buttonOrder,
+        lookup = {},
+        config = [],
+        self = this,
+        ii;
+
+    // Note: there cannot be one button config containing everything, as that
+    // would make it harder to make new canned buttons show up.  So, keep
+    // canned and default buttons separate.  And add button order.
+
+    // Get user-defined buttons.
+    userButtonConfig = this.getCacheValue('user-button-config', []);
+
+    // Get user-defined button visibility and/or ordering.
+    // Note: invisible buttons have order -1; new buttons do not have an order
+    // so they can be detected as new, and shown.
+    buttonOrder = this.getCacheValue('user-button-display-order-' +
+            this.getQueueId(), []);
+
+    function assertCorrectButtonConfig(config) {
+        for (ii = 0; ii < config.length; ii += 1) {
+            self.assertCorrectButtonConfig(config[ii]);
+        }
+    }
+
+    function addToLookup(config) {
+        for (ii = 0; ii < config.length; ii += 1) {
+            if (undefined !== lookup[config[ii].id]) {
+                throw new Error('Button ' + config[ii].id + ' already defined');
+            }
+            lookup[config[ii].id] = config[ii];
+        }
+    }
+
+    // Do a sanity test on the config objects.
+    assertCorrectButtonConfig(defaultButtonConfig);
+    assertCorrectButtonConfig(userButtonConfig);
+
+    // Create lookup.
+    addToLookup(defaultButtonConfig);
+    addToLookup(userButtonConfig);
+
+    // Create the real config.
+    if (undefined === buttonOrder || 0 === buttonOrder.length) {
+        // User never customized buttons; use default buttons.
+        config = defaultButtonConfig;
+    } else {
+        for (ii = 0; ii < buttonOrder.length; ii += 1) {
+            if (undefined === lookup[buttonOrder[ii]]) {
+                throw new Error('Button ' + buttonOrder[ii] + ' not defined');
+            }
+            config.push(lookup[buttonOrder[ii]]);
+        }
     }
 
     return config;
@@ -2644,6 +2701,7 @@ QueueManager.prototype.getUiCssTemplate = function () {
         // Icons: thanks, http://www.iconspedia.com/pack/pretty-office-2038/
         // and http://www.iconspedia.com/pack/pretty-office-5-2835/
         // Base64: thanks, http://www.greywyvern.com/code/php/binary2base64
+        // TODO: FUTURE: design own icons as we're not allow to resize these
         '#netflix-queue-sorter .nqs-icon-link#nqs-icon-cancel {' +
             'background-image: url("data:image/png;base64,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%3D");' +
             'display: none;' +   // Don't show unless a sort is in progress.
@@ -2698,6 +2756,12 @@ QueueManager.prototype.getUiCssTemplate = function () {
             'float: none;' +
         '}' +
 
+        // Config UI.
+        '#nqs-config {' +
+            'display: none;' +   // Hidden initially.
+            'color: #333333;' +   // Netflix black.
+        '}' +
+
         // Movie info icon, outside of #netflix-queue-sorter.
         '.nqs-movie-info-icon {' +
             'float: right;' +
@@ -2722,7 +2786,7 @@ QueueManager.prototype.getUiUnsupportedCssTemplate = function () {
 QueueManager.prototype.getUiHtmlTemplate = function () {
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.1</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.2</legend>' +
             '<div id="nqs-controls">' +
                 // JSLint does not like these javascript hrefs (true, they do
                 // not follow the semantic layered markup rules), but at least
@@ -2744,17 +2808,60 @@ QueueManager.prototype.getUiHtmlTemplate = function () {
                     '<input type="text" size="5" id="nqs-sort-limit-row-max">' +
                 '</div>' +
             '</div>' +
+            '<div id="nqs-config">' +   // TODO: NOW: should be <form>?
+// TODO: NOW: hook these options up throughout the code.
+                '<p>' +
+                    '<input type="checkbox" id="auto-update">' +
+                    '<label for="auto-update" title="If unchecked, you will need to press the Update Queue button yourself">Automatically update queue after sort</label>' +
+                '</p>' +
+                '<p>' +
+                    '<input type="checkbox" id="use-cache">' +
+                    '<label for="use-cache" title="If unchecked, will slow down sort performance but will avoid stale data and save browser memory">Store retrieved movie info</label>' +
+                '</p>' +
+                '<p>' +
+                    '<input type="checkbox" id="ignore-articles">' +
+                    '<label for="ignore-articles" title="If unchecked, title sort will not follow Netflix\'s title sort behavior">Ignore articles for title sort</label>' +
+                '</p>' +
+// TODO: NOW: force refresh == !use cache?
+// TODO: FUTURE: if use-cache is on, show "force refresh" checkbox in UI.
+                '<p>' +
+                    '<input type="checkbox" id="force-refresh">' +
+                    '<label for="force-refresh" title="If unchecked, TODO: NOW">Always reload previously retrieved data to ensure accuracy</label>' +
+                '</p>' +
+                '<p>' +
+                    '<input type="checkbox" id="show-movie-info-icons">' +
+                    '<label for="show-movie-info-icons" title="If unchecked, retrieved movie info will not be visible, but will make loading the queue page faster">Show movie info icons</label>' +
+                '</p>' +
+
+    // TODO: NOW: add options for custom sort orders for those buttons that
+    //       use them.
+
+    // TODO: NOW: add options to managing button display order and visibility
+
+                '<p>' +
+                    '<input type="checkbox" id="debug-mode">' +
+                    '<label for="debug-mode" title="See http://wiki.greasespot.net/GM_log for how to make debug messages appear">Debug mode</label>' +
+                '</p>' +
+// TODO: FUTURE: allow custom slowness indicator?
+                '<p>' +
+                    'Sort button slowness indicator: <input type="text" id="slowness-indicator" size="5">' +
+                '</p>' +
+                '<p>' +
+                    '<button>Clear stored movie info</button>' +
+                    // TODO: FUTURE: allow clearing of specific cached items
+                '</p>' +
+                '<button>Save</button><button>Cancel</button>' +
+            '</div>' +
         '</fieldset>';
 };
 
 QueueManager.prototype.getUiUnsupportedHtmlTemplate = function () {
+    // TODO: FUTURE: add Opera,IE here once it's supported.
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.1</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.2</legend>' +
             'Your browser is not supported.  Please use the latest ' +
             'version of Chrome, Firefox or Safari.' +
-        // TODO: FUTURE: add Opera here once it's supported.
-        // TODO: NOW: add note to config UI that FF and S are pref over C
         '</fieldset>';
 };
 
@@ -2786,6 +2893,27 @@ QueueManager.prototype.getUpdateButtonText = function () {
             this.updateQueueButton.getAttribute('alt');
 };
 
+QueueManager.prototype.couldBeSlow = function (config) {
+    var ii,
+        jj,
+        result = false;
+
+    for (ii = 0; ii < config.length; ii += 1) {
+        if (undefined !== config[ii].fields) {
+            for (jj = 0; jj < config[ii].fields.length; jj += 1) {
+                if (undefined === this.allDataPointConfig[
+                        config[ii].fields[jj]]) {
+                    // Not a queue field.
+                    result = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    return result;
+};
+
 QueueManager.prototype.showUi = function (icons) {
     var cssTemplate,
         htmlTemplate,
@@ -2804,6 +2932,7 @@ QueueManager.prototype.showUi = function (icons) {
         undoEventHandler,
         sortButtonEventHandler,
         rowFilterInputEventHandler,
+        couldBeSlow,
         self = this,
         ee,
         id,
@@ -2834,13 +2963,14 @@ QueueManager.prototype.showUi = function (icons) {
             // Only add button if it's defined for the current queue.
             for (jj = 0; jj < config[ii].queues.length; jj += 1) {
                 if (queueId === config[ii].queues[jj]) {
+                    couldBeSlow = this.couldBeSlow(config[ii].config);
                     buttonsHtml += this.substituteVars(buttonTemplate, {
                         config: this.htmlEntityEncode(
                                 JSON.stringify(config[ii].config)),
                         title: config[ii].title,
-                        // TODO: NOW: add * automatically if not from queue.
-                        // TODO: NOW: make slowness indicator configurable
-                        text: config[ii].text
+                        text: couldBeSlow ? config[ii].text + ' *' : 
+                                config[ii].text
+
                     });
                     break;
                 }
@@ -2929,6 +3059,12 @@ QueueManager.prototype.showUi = function (icons) {
         this.customAddEventListener(elts[ee], 'click', sortButtonEventHandler);
     }
 
+    // Set previously saved min/max values, if any.
+    this.minSelectedRowIndex(this.getCacheValue('last-min-row-' +
+                this.getQueueId()));
+    this.maxSelectedRowIndex(this.getCacheValue('last-max-row-' +
+                this.getQueueId()));
+
     rowFilterInputEventHandler = function (evt) {
         self.applyToSelectedRowsOnly(true);
     };
@@ -2970,7 +3106,7 @@ QueueManager.prototype.showCachedData = function (icons) {
     // Get movie data for this queue.  (Keep dvd and instant data separate.)
     key = 'movie-data-' + this.getQueueId();
     this.cachedData = this.getCacheValue(key);
-    if (undefined === this.cachedData) {
+    if (!this.cachedData) {
         this.cachedData = {};
     }
 
@@ -3074,7 +3210,7 @@ QueueManager.prototype.checkForUndo = function () {
         rr,
         origOrder = this.getCacheValue('undo-order-' + this.getQueueId());
 
-    if (undefined !== origOrder) {
+    if (origOrder) {
         // Undo is possible only if all movies in the queue are present in the
         // undo-order.
         // TODO: FUTURE: add timeout?  Seeing undo a week later is confusing.
@@ -3182,7 +3318,7 @@ QueueManager.prototype.assertUniqueDataPoints = function () {
 QueueManager.prototype.checkForUpdates = function () {
     function versionCheckHandler(response) {
         var upgradeElt,
-            version = 2.1,
+            version = 2.2,
             latestVersion = -1,
             result = /<b>Version:<\/b>\n([\d\.]+?)\n<br/.exec(
                     response.responseText);
@@ -3243,6 +3379,19 @@ QueueManager.prototype.init = function () {
     }
     this.checkForUndo();
 
+    // TODO: NOW: get rid of this
+    if (true === this.getCacheValue('reload-trigger')) {
+        this.deleteCacheValue('reload-trigger');
+        if (0 === document.getElementsByClassName('svfmsg-s').length &&
+                0 === document.getElementsByClassName('svfmsg-l').length) {
+            //this.switchToBusyMode();
+            //this.switchToNoMoreCancelMode();
+            //this.setStatus('[Reloading page...]');
+            //window.location.reload(true);
+            this.setStatus('[If the order didn\'t change, reload the page.]');
+        }
+    }
+
     if (this.isDebug) {
         this.debug('init: showCachedData');
     }
@@ -3266,23 +3415,3 @@ var manager = new QueueManager();
 manager.init();
 
 ///////////////////////////////////////////////////////////////////////////////
-
-
-// TODO: NOW: see readme for the icons:
-//       http://www.iconspedia.com/dload.php?up_id=59969
-//       design own icons as we're not allow to resize / resave these?
-// TODO: NOW: get movie icons instead; we're dealing with movie lovers here.
-//       http://iconlibrary.iconshock.com/icons/the-ultimate-collection-of-free-movie-icon-sets/
-
-/*
-Title:"30 pretty office icons" 
-?customicondesign 
-
-All the icons contained in this archive free for non-commercial use.
-If you like them just visit the website "http://www.customicondesign.com" 
-They can be given out provided that they are neither altered 
-Not separated from this "Read me" file and from a reference 
-to the site "http://www.customicondesign.com".
-
-Artwork by customicondesign.com407
-*/
