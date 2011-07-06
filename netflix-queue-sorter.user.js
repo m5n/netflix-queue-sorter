@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 2.7 2011-03-23
+// Version 2.8 2011-07-06
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,17 +11,21 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     2.7
-// @description v2.7: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, and sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
+// @version     2.8
+// @description v2.8: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, and sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
 // @include     http://movies.netflix.com/Queue*
 // @include     http://www.netflix.com/Queue*
 // @include     http://movies.netflix.ca/Queue*
 // @include     http://www.netflix.ca/Queue*
-// Google Chrome uses @match in stead of @include.
+// @include     http://ca.movies.netflix.com/Queue*
+// @include     http://ca.netflix.com/Queue*
+// Google Chrome uses @match instead of @include.
 // @match       http://movies.netflix.com/Queue*
 // @match       http://www.netflix.com/Queue*
 // @match       http://movies.netflix.ca/Queue*
 // @match       http://www.netflix.ca/Queue*
+// @match       http://ca.movies.netflix.com/Queue*
+// @match       http://ca.netflix.com/Queue*
 // ==/UserScript==
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -293,8 +297,8 @@ Retriever.prototype = {
         var value;
 
         if ("undefined" !== typeof GM_getValue &&
-                // FF4RC1 does not define GM_getValue.toString()...
-                // TODO: NOW: test again w/ final version of FF4.
+                // FF4 does not define GM_getValue.toString so be careful not
+                // to break the Chrome check after it.
                 ("undefined" === typeof GM_getValue.toString ||
                     // Chrome defines this function, but it just outputs a msg.
                     GM_getValue.toString().indexOf("not supported") < 0)) {
@@ -315,8 +319,8 @@ Retriever.prototype = {
     },
     setCacheValue: function (key, value) {
         if ("undefined" !== typeof GM_setValue &&
-                // FF4RC1 does not define GM_setValue.toString()...
-                // TODO: NOW: test again w/ final version of FF4.
+                // FF4 does not define GM_setValue.toString so be careful not
+                // to break the Chrome check after it.
                 ("undefined" === typeof GM_setValue.toString ||
                     // Chrome defines this function, but it just outputs a msg.
                     GM_setValue.toString().indexOf("not supported") < 0)) {
@@ -327,8 +331,8 @@ Retriever.prototype = {
     },
     deleteCacheValue: function (key) {
         if ("undefined" !== typeof GM_deleteValue &&
-                // FF4RC1 does not define GM_deleteValue.toString()...
-                // TODO: NOW: test again w/ final version of FF4.
+                // FF4 does not define GM_deleteValue.toString so be careful not
+                // to break the Chrome check after it.
                 ("undefined" === typeof GM_deleteValue.toString ||
                     // Chrome defines this function, but it just outputs a msg.
                     GM_deleteValue.toString().indexOf("not supported") < 0)) {
@@ -2522,7 +2526,7 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
         },
         {
             id: 'd40',
-            text: 'Instant \u2191',   // Use Unicode in stead of HTML entity.
+            text: 'Instant \u2191',   // Use Unicode instead of HTML entity.
             title: 'Move instantly playable movies to the top of your queue',
             queues: [QueueManager.QUEUE_DVD],
             // Note: Chrome needs 'order' as secondary sort to keep current order.
@@ -2530,7 +2534,7 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
         },
         {
             id: 'd50',
-            text: 'Instant \u2193',   // Use Unicode in stead of HTML entity.
+            text: 'Instant \u2193',   // Use Unicode instead of HTML entity.
             title: 'Move instantly playable movies to the bottom of your queue',
             queues: [QueueManager.QUEUE_DVD],
             // Note: Chrome needs 'order' as secondary sort to keep current order.
@@ -2556,9 +2560,9 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
             // Add sort by title to make sure series discs are in asc order.
             id: 'd80',
             text: 'TV/Movies',
-            title: 'Move the television genre above movie genres and sort by title',
+            title: 'Move the TV Shows genre above movie genres and sort by title',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
-            config: [{command: 'sort', fields: ['genre', 'title'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], cacheKey: 'sort-order-custom-genre-' + this.getQueueId(), defaultOrder: ['Television']}]
+            config: [{command: 'sort', fields: ['genre', 'title'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], cacheKey: 'sort-order-custom-genre-' + this.getQueueId(), defaultOrder: ['TV Shows']}]
         },
         {
             // Asc direction for availability sort intuitively means longer
@@ -2828,7 +2832,7 @@ QueueManager.prototype.getUiUnsupportedCssTemplate = function () {
 QueueManager.prototype.getUiHtmlTemplate = function () {
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.7</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.8</legend>' +
             '<div id="nqs-controls">' +
                 // JSLint does not like these javascript hrefs (true, they do
                 // not follow the semantic layered markup rules), but at least
@@ -2901,7 +2905,7 @@ QueueManager.prototype.getUiUnsupportedHtmlTemplate = function () {
     // TODO: FUTURE: add Opera,IE here once it's supported.
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.7</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.8</legend>' +
             'Your browser is not supported.  Please use the latest ' +
             'version of Chrome, Firefox or Safari.' +
         '</fieldset>';
@@ -2914,7 +2918,7 @@ QueueManager.prototype.getButtonHtmlTemplate = function () {
 QueueManager.prototype.getMovieInfoHtmlTemplate = function () {
     // TODO: FUTURE: improve presentation; use click rather than hover?
     // TODO: PERFORMANCE: using a template for something this simple is
-    //       inefficient: two elements are created in stead of one when using
+    //       inefficient: two elements are created instead of one when using
     //       DOM API.
     return '<span class="nqs-movie-info-icon" title="{title}"></span>';
 };
@@ -3360,10 +3364,9 @@ QueueManager.prototype.assertUniqueDataPoints = function () {
 QueueManager.prototype.checkForUpdates = function () {
     function versionCheckHandler(response) {
         var upgradeElt,
-            version = 2.7,
+            version = 2.8,
             latestVersion = -1,
-            result = /<b>Version:<\/b>\n([\d\.]+?)\n<br/.exec(
-                    response.responseText);
+            result = /@version\s+([\d\.]+)/.exec(response.responseText);
 
         if (result) {
             latestVersion = Number(result[1]);
@@ -3371,6 +3374,7 @@ QueueManager.prototype.checkForUpdates = function () {
             if (latestVersion > version) {
                 upgradeElt = document.getElementById('nqs-icon-update');
                 upgradeElt.style.display = 'block';
+                // TODO: NOW: add a CSS class; don't set style props via JS.
             }
         } else {
             // Chrome will get here as it does not support cross-domain XHR yet.
@@ -3382,7 +3386,7 @@ QueueManager.prototype.checkForUpdates = function () {
     // TODO: FUTURE: Opera does not support GM_xmlhttpRequest.
     GM_xmlhttpRequest({
         method: 'GET',
-        url: 'http://userscripts.org/scripts/show/35183',
+        url: 'http://userscripts.org/scripts/source/35183.meta.js',
         onload: versionCheckHandler,
         onerror: versionCheckHandler   // Only added for development mode.
     });
@@ -3457,3 +3461,4 @@ var manager = new QueueManager();
 manager.init();
 
 ///////////////////////////////////////////////////////////////////////////////
+
