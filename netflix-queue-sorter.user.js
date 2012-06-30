@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 2.8 2011-07-06
+// Version 2.9 2012-06-30
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,19 +11,21 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     2.8
-// @description v2.8: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, and sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
+// @version     2.9
+// @description v2.9: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, and sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
 // @include     http://movies.netflix.com/Queue*
+// @include     http://dvd.netflix.com/Queue*
 // @include     http://www.netflix.com/Queue*
 // @include     http://movies.netflix.ca/Queue*
 // @include     http://www.netflix.ca/Queue*
 // @include     http://ca.movies.netflix.com/Queue*
 // @include     http://ca.netflix.com/Queue*
 // Google Chrome uses @match instead of @include.
-// @match       http://movies.netflix.com/Queue*
-// @match       http://www.netflix.com/Queue*
 // @match       http://movies.netflix.ca/Queue*
 // @match       http://www.netflix.ca/Queue*
+// @match       http://movies.netflix.com/Queue*
+// @match       http://dvd.netflix.com/Queue*
+// @match       http://www.netflix.com/Queue*
 // @match       http://ca.movies.netflix.com/Queue*
 // @match       http://ca.netflix.com/Queue*
 // ==/UserScript==
@@ -218,6 +220,9 @@ var Retriever = function (id, config) {
 
     // Debug mode.
     this.isDebug = false;   // Initialized in initConfigOptions().
+
+    // Disable cache?
+    this.disableCache = false;   // Possibly overridden in getQueueId().
 };
 
 // XHR delay to avoid bombarding the servers with requests.
@@ -296,7 +301,10 @@ Retriever.prototype = {
     getCacheValue: function (key, defaultValue) {
         var value;
 
-        if ("undefined" !== typeof GM_getValue &&
+        if (this.disableCache) {
+            // Skip; use default value.
+            value = undefined;
+        } else if ("undefined" !== typeof GM_getValue &&
                 // FF4 does not define GM_getValue.toString so be careful not
                 // to break the Chrome check after it.
                 ("undefined" === typeof GM_getValue.toString ||
@@ -318,7 +326,9 @@ Retriever.prototype = {
         return value;
     },
     setCacheValue: function (key, value) {
-        if ("undefined" !== typeof GM_setValue &&
+        if (this.disableCache) {
+            // Skip.
+        } else if ("undefined" !== typeof GM_setValue &&
                 // FF4 does not define GM_setValue.toString so be careful not
                 // to break the Chrome check after it.
                 ("undefined" === typeof GM_setValue.toString ||
@@ -330,7 +340,9 @@ Retriever.prototype = {
         }
     },
     deleteCacheValue: function (key) {
-        if ("undefined" !== typeof GM_deleteValue &&
+        if (this.disableCache) {
+            // Skip.
+        } else if ("undefined" !== typeof GM_deleteValue &&
                 // FF4 does not define GM_deleteValue.toString so be careful not
                 // to break the Chrome check after it.
                 ("undefined" === typeof GM_deleteValue.toString ||
@@ -636,8 +648,13 @@ var NetflixDetailsPageRetriever = function () {
         commonSenseRating: { extractFn: 'extractCommonSenseRating', selectable:  true, display: 'Common Sense Rating' },
         numRatings:        { extractFn: 'extractNumRatings',        selectable:  true, display: 'Number of Ratings' },
         numDiscs:          { extractFn: 'extractNumDiscs',          selectable:  true, display: 'Number of Discs' },
-        mediaFormat:       { extractFn: 'extractMediaFormat',       selectable:  true, display: 'Media Format' },
-        dateAdded:         { extractFn: 'extractDateAdded',         selectable:  true, display: 'Date Added' }
+        mediaFormat:       { extractFn: 'extractMediaFormat',       selectable:  true, display: 'Media Format' }
+/* TODO: FUTURE: no longer available; check later if it's back
+        dateAdded:         { extractFn: 'extractDateAdded',         selectable:  true, display: 'Date Added' },
+*/
+/* TODO: FUTURE: member reviews are loaded after page load; check later if it's changed
+        reviews:           { extractFn: 'extractReviews',           selectable:  true, display: 'Reviews' }
+*/
     };
 
 // TODO: FUTURE: is DVD release date available somewhere on Netflix?  Other?
@@ -702,13 +719,13 @@ NetflixDetailsPageRetriever.prototype.extractYear = function (id, dom) {
 // Extract a definition-term's data (<dt><dd>).
 NetflixDetailsPageRetriever.prototype.extractDdElt = function (dom, dtVal) {
     var dts = dom.getElementsByTagName('dt'),
-        dds = dom.getElementsByTagName('dd'),
+        dds,
         ii,
         ddElt;
 
     for (ii = 0; ii < dts.length; ii += 1) {
         if (dts[ii].innerHTML === dtVal) {
-            ddElt = dds[ii];
+            ddElt = dts[ii].parentNode.getElementsByTagName('dd')[0];
             break;
         }
     }
@@ -744,7 +761,13 @@ NetflixDetailsPageRetriever.prototype.extractLength = function (id, dom) {
     // Movies soon-to-be-released may not have a length yet.
     if (elts.length > 0) {
         txt = elts[0].innerHTML;
-        if (/(\d+) minutes/.test(txt)) {
+        if (/(\d+)hr (\d+)m/.test(txt)) {
+            len = parseInt(RegExp.$1, 10) * 60 + parseInt(RegExp.$2, 10);
+
+        } else if (/(\d+)hr/.test(txt) || /(\d+) minutes/.test(txt)) {
+            len = parseInt(RegExp.$1, 10) * 60;
+
+        } else if (/(\d+)m/.test(txt) || /(\d+) minutes/.test(txt)) {
             len = parseInt(RegExp.$1, 10);
 
         // "Old" style page (regular size box image).
@@ -763,11 +786,12 @@ NetflixDetailsPageRetriever.prototype.extractLength = function (id, dom) {
             }
 
         // "New" style page (oversized image).
-        } else if (/Seasons /.test(txt)) {
+        // Could be Series, Seasons, Episodes, Volumes, Chapters, Collections.
+        } else {
             // Find duration of first episode, if any.
             // Skip first elt as we already looked at that.
             for (ee = 1; ee < elts.length; ee += 1) {
-                if (/(\d+)m/.test(elts[ee].innerHTML)) {
+                if (/(\d+)\s?m/.test(elts[ee].innerHTML)) {
                     len = parseInt(RegExp.$1, 10);
                     break;
                 }
@@ -784,9 +808,14 @@ NetflixDetailsPageRetriever.prototype.extractMaturityRating = function (
         elts = dom.getElementsByClassName(className);
 
     if (elts.length > 0) {
+        // "New" style pages have a value element.
+        if (elts[0].getElementsByClassName('value').length > 0) {
+            rating = elts[0].getElementsByClassName('value')[0].innerHTML;
+
         // "Old" style pages have a link, "new" style do not.
-        if (elts[0].getElementsByTagName('a').length > 0) {
+        } else if (elts[0].getElementsByTagName('a').length > 0) {
             rating = elts[0].getElementsByTagName('a')[0].innerHTML;
+
         } else {
             rating = elts[0].innerHTML;
         }
@@ -901,6 +930,14 @@ NetflixDetailsPageRetriever.prototype.extractMediaFormat = function (id, dom) {
             formats.push('STREAMING');
         }
 
+        formatElt = this.extractDdElt(dom, 'Streaming');
+        if (undefined !== formatElt) {
+            formats.push('STREAMING');
+            if (/HD/.test(formatElt.innerHTML)) {
+                formats.push('HD');
+            }
+        }
+
         if (0 === formats.length) {
             // TODO: NOW: the code above does not work.  Avoid exception.
             //throw new Error(id + ': format not found');
@@ -929,6 +966,23 @@ NetflixDetailsPageRetriever.prototype.extractMediaFormat = function (id, dom) {
     }
 
     return formats;
+};
+
+NetflixDetailsPageRetriever.prototype.extractReviews = function (id, dom) {
+    var elt = dom.getElementsByClassName('reviews-header'),
+        num = 0;   // Default to 0.
+
+    if (elt.length > 0) {
+        elt = elt[0].getElementsByClassName('info');
+
+        if (elt.length > 0) {
+            if (/(\d+)/m.test(this.trim(elt[0].innerHTML))) {
+                num = parseInt(RegExp.$1, 10);
+            }
+        }
+    }
+
+    return num;
 };
 
 NetflixDetailsPageRetriever.prototype.extractDateAdded = function (id, dom) {
@@ -1167,7 +1221,8 @@ QueueManager.prototype.extractTitle = function (trElt) {
             'LE ',
             'LES ',
             'IL ',
-            'L\''
+            'L\'',   // L'avventura
+            '\''     // 'night Mother
         ];
 
     function convertTitle(title) {
@@ -1199,7 +1254,7 @@ QueueManager.prototype.extractTitle = function (trElt) {
     QueueManager.prototype.extractTitle = function (trElt) {
         var elt = trElt.getElementsByClassName('tt')[0];
         elt = elt.getElementsByClassName('mdpLink')[0];
-        return convertTitle(elt.innerHTML);
+        return convertTitle(self.trim(elt.innerHTML));
     };
 
     // And call it.
@@ -2504,28 +2559,52 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
         // customOrderSortFn is being used.  Only pass cacheKey if that default
         // order can be customized by the user.
         {
+            // Add sort by title to make sure series discs are in asc order.
             id: 'd10',
+            text: 'Star Rating',
+            title: 'Sort your queue by star rating from high to low',
+            queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
+            config: [{command: 'sort', fields: ['starRating', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC]}]
+        },
+        {
+            // Add sort by title to make sure series discs are in asc order.
+            id: 'd20',
+            text: 'Average Rating',
+            title: 'Sort your queue by average rating from high to low',
+            queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
+            config: [{command: 'sort', fields: ['avgRating', 'starRating', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_DESC, QueueManager.SORT_ASC]}]
+        },
+        {
+            // Add sort by title to make sure series discs are in asc order.
+            id: 'd30',
+            text: 'Star/Avg Rating',
+            title: 'Sort your queue by star rating (primary) and by average rating (secondary) from high to low',
+            queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
+            config: [{command: 'sort', fields: ['starRating', 'avgRating', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_DESC, QueueManager.SORT_ASC]}]
+        },
+        {
+            id: 'd40',
             text: 'Shuffle',
             title: 'Shuffle your queue into a random order',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
             config: [{command: 'shuffle'}]
         },
         {
-            id: 'd20',
+            id: 'd50',
             text: 'Reverse',
             title: 'Reverse the current list order',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
             config: [{command: 'reverse'}]
         },
         {
-            id: 'd30',
+            id: 'd60',
             text: 'Title',
             title: 'Sort your queue alphabetically by movie title',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
             config: [{command: 'sort', fields: ['title'], sortFns: ['defaultSortFn'], dirs: [QueueManager.SORT_ASC]}]
         },
         {
-            id: 'd40',
+            id: 'd70',
             text: 'Instant \u2191',   // Use Unicode instead of HTML entity.
             title: 'Move instantly playable movies to the top of your queue',
             queues: [QueueManager.QUEUE_DVD],
@@ -2533,7 +2612,7 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
             config: [{command: 'sort', fields: ['playability', 'order'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], defaultOrder: ['NOW', '{date}']}]
         },
         {
-            id: 'd50',
+            id: 'd80',
             text: 'Instant \u2193',   // Use Unicode instead of HTML entity.
             title: 'Move instantly playable movies to the bottom of your queue',
             queues: [QueueManager.QUEUE_DVD],
@@ -2542,15 +2621,7 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
         },
         {
             // Add sort by title to make sure series discs are in asc order.
-            id: 'd60',
-            text: 'Star Rating',
-            title: 'Sort your queue by star rating from high to low',
-            queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
-            config: [{command: 'sort', fields: ['starRating', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC]}]
-        },
-        {
-            // Add sort by title to make sure series discs are in asc order.
-            id: 'd70',
+            id: 'd90',
             text: 'Genre',
             title: 'Sort your queue alphabetically by genre',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
@@ -2558,7 +2629,7 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
         },
         {
             // Add sort by title to make sure series discs are in asc order.
-            id: 'd80',
+            id: 'd100',
             text: 'TV/Movies',
             title: 'Move the TV Shows genre above movie genres and sort by title',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
@@ -2567,7 +2638,7 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
         {
             // Asc direction for availability sort intuitively means longer
             // and longer away from "now", so we want desc sort here.
-            id: 'd90',
+            id: 'd110',
             text: 'Availability',
             title: 'Move the most desirable movies to the top of your queue',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
@@ -2576,7 +2647,7 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
         },
         {
             // Add sort by title to make sure series discs are in asc order.
-            id: 'd100',
+            id: 'd120',
             text: 'Length',
             title: 'Sort your queue by length from short to long',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
@@ -2584,7 +2655,7 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
         },
         {
             // Add sort by title to make sure series discs are in asc order.
-            id: 'd110',
+            id: 'd130',
             text: 'Year',
             title: 'Sort your queue by year from new to old',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
@@ -2592,16 +2663,16 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
         },
         {
             // Format sort for Instant queue.
-            id: 'd120',
+            id: 'd140',
             text: 'Format',
-            title: 'Move high-definition movies above standard-definition movies',
+            title: 'Move HD movies above standard-definition movies',
             queues: [QueueManager.QUEUE_INSTANT],
             // Note: Chrome needs 'order' as secondary sort to keep current order.
             config: [{command: 'sort', fields: ['mediaFormat', 'order'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], cacheKey: 'sort-order-mediaformat-' + QueueManager.QUEUE_INSTANT, defaultOrder: ['HD', 'STREAMING']}]   // Favor HD over SD formats.
         },
         {
             // Format sort for DVD queue.
-            id: 'd130',
+            id: 'd150',
             text: 'Format',
             title: 'Move high-definition movies above standard-definition movies',
             queues: [QueueManager.QUEUE_DVD],
@@ -2610,15 +2681,15 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
         },
         {
             // Add sort by title to make sure series discs are in asc order.
-            id: 'd140',
+            id: 'd160',
             text: 'Language',
             title: 'Sort your queue alphabetically by language',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
             config: [{command: 'sort', fields: ['language', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_ASC, QueueManager.SORT_ASC]}]
-        },
-/* TODO: NOW: no longer available?
+        }
+/* TODO: FUTURE: no longer available; check later if it's back
         {
-            id: 'd150',
+            id: 'd170',
             text: 'Date Added',
             title: 'Sort your queue by the date movies were added to the queue',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
@@ -2626,22 +2697,17 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
             config: [{command: 'sort', fields: ['dateAdded', 'order'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_ASC, QueueManager.SORT_ASC], defaultOrder: ['{date}']}]
         },
 */
+/* TODO: FUTURE: member reviews are loaded after page load; check later if it's changed
         {
             // Add sort by title to make sure series discs are in asc order.
-            id: 'd160',
-            text: 'Star/Avg Rating',
-            title: 'Sort your queue by star rating (primary) and by average rating (secondary) from high to low',
+            id: 'd180',
+            text: 'Reviews',
+            title: 'Sort your queue by the number of member reviews',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
-            config: [{command: 'sort', fields: ['starRating', 'avgRating', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_DESC, QueueManager.SORT_ASC]}]
-        },
-        {
-            // Add sort by title to make sure series discs are in asc order.
-            id: 'd170',
-            text: 'Average Rating',
-            title: 'Sort your queue by average rating from high to low',
-            queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
-            config: [{command: 'sort', fields: ['avgRating', 'starRating', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_DESC, QueueManager.SORT_ASC]}]
+            // Note: Chrome needs 'order' as secondary sort to keep current order.
+            config: [{command: 'sort', fields: ['reviews', 'avgRating', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_DESC, QueueManager.SORT_ASC]}]
         }
+*/
     ];
 };
 
@@ -2720,6 +2786,7 @@ QueueManager.prototype.getUiContainerCssTemplate = function () {
         '#netflix-queue-sorter legend {' +
             'color: #666666;' +
             'font-size: smaller;' +
+            'padding: 0 0.5em;' +
         '}';
 };
 
@@ -2771,7 +2838,7 @@ QueueManager.prototype.getUiCssTemplate = function () {
         '}' +
         '#netflix-queue-sorter #nqs-status {' +
             'position: absolute;' +
-            'bottom: 27px;' +
+            'bottom: 40px;' +
         '}' +
 
         // Buttons go on the right.
@@ -2783,6 +2850,7 @@ QueueManager.prototype.getUiCssTemplate = function () {
         '}' +
         '#netflix-queue-sorter #nqs-buttons button {' +
             'margin: 0pt 0pt 0.75em 0.5em;' +
+            'padding: 1px 3px;' +
         '}' +
         '#netflix-queue-sorter #nqs-buttons button.active {' +
             // On MacOS, all buttons keep their nice aqua rendering as long as
@@ -2800,6 +2868,10 @@ QueueManager.prototype.getUiCssTemplate = function () {
         '#netflix-queue-sorter input#nqs-sort-limit-row-min,' +
         '#netflix-queue-sorter input#nqs-sort-limit-row-max {' +
             'float: none;' +
+        '}' +
+        '#netflix-queue-sorter input#nqs-use-sort-limit-rows {' +
+            'position: relative;' +
+            'top: 3px;' +
         '}' +
 
         // Config UI.
@@ -2832,7 +2904,7 @@ QueueManager.prototype.getUiUnsupportedCssTemplate = function () {
 QueueManager.prototype.getUiHtmlTemplate = function () {
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.8</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.9</legend>' +
             '<div id="nqs-controls">' +
                 // JSLint does not like these javascript hrefs (true, they do
                 // not follow the semantic layered markup rules), but at least
@@ -2905,7 +2977,7 @@ QueueManager.prototype.getUiUnsupportedHtmlTemplate = function () {
     // TODO: FUTURE: add Opera,IE here once it's supported.
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.8</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.9</legend>' +
             'Your browser is not supported.  Please use the latest ' +
             'version of Chrome, Firefox or Safari.' +
         '</fieldset>';
@@ -3009,12 +3081,13 @@ QueueManager.prototype.showUi = function (icons) {
             // Only add button if it's defined for the current queue.
             for (jj = 0; jj < config[ii].queues.length; jj += 1) {
                 if (queueId === config[ii].queues[jj]) {
-                    couldBeSlow = this.couldBeSlow(config[ii].config);
+                    // Adding marker to slow sorts is confusing; don't do it.
+                    //couldBeSlow = this.couldBeSlow(config[ii].config);
                     buttonsHtml += this.substituteVars(buttonTemplate, {
                         config: this.htmlEntityEncode(
                                 JSON.stringify(config[ii].config)),
                         title: config[ii].title,
-                        text: couldBeSlow ? config[ii].text + ' *' : 
+                        text: //couldBeSlow ? config[ii].text + ' *' : 
                                 config[ii].text
 
                     });
@@ -3282,22 +3355,40 @@ QueueManager.prototype.getQueueId = function () {
         id,
         tabs;
 
-    tabs = document.getElementById('qtabs').getElementsByTagName('li');
-    for (tt = 0; tt < tabs.length; tt += 1) {
-        if (this.hasClass(tabs[tt], 'selected') &&
-                // Movies.n.c has queueTab, but www.n.c has tab.
-                (this.hasClass(tabs[tt], 'queueTab') ||
-                        this.hasClass(tabs[tt], 'tab'))) {
-            // Movies.n.c has instant, but www.n.c has inst.
-            if (this.hasClass(tabs[tt], QueueManager.QUEUE_INSTANT) ||
-                    this.hasClass(tabs[tt], 'inst')) {
-                id = QueueManager.QUEUE_INSTANT;
-            } else if (this.hasClass(tabs[tt], QueueManager.QUEUE_DVD)) {
-                id = QueueManager.QUEUE_DVD;
-            } else {
-                // The Netflix source code might have changed.
-                throw new Error('Unknown queue type');
+   tabs = document.getElementById('qtabs');
+    if (tabs) {
+        tabs = tabs.getElementsByTagName('li');
+        for (tt = 0; tt < tabs.length; tt += 1) {
+            if (this.hasClass(tabs[tt], 'selected') &&
+                    // Movies.n.c has queueTab, but www.n.c has tab.
+                    (this.hasClass(tabs[tt], 'queueTab') ||
+                            this.hasClass(tabs[tt], 'tab'))) {
+                // Movies.n.c has instant, but www.n.c has inst.
+                if (this.hasClass(tabs[tt], QueueManager.QUEUE_INSTANT) ||
+                        this.hasClass(tabs[tt], 'inst')) {
+                    id = QueueManager.QUEUE_INSTANT;
+                } else if (this.hasClass(tabs[tt], QueueManager.QUEUE_DVD)) {
+                    id = QueueManager.QUEUE_DVD;
+                } else {
+                    // The Netflix source code might have changed.
+                    throw new Error('Unknown queue type');
+                }
             }
+        }
+    } else {
+        // Account profiles only have a DVD queue.
+        // Make sure not to step on the main profile's settings, 
+        // so cannot use 'dvd' here... we really need the profile ID.
+        // TODO: NOW: how to get current user's profile ID?
+        // TODO: NOW: and even if we get it, button config is all based on
+        //            dvd... for now, use 'dvd' and avoid updating cache.
+        id = 'dvd';
+
+        // Per TODOs above, avoid updating cache.
+        this.disableCache = true;
+        // Also apply to all retrievers.
+        for (tt = 0; tt < this.allNonQueueRetrievers.length; tt += 1) {
+            this.allNonQueueRetrievers[tt].disableCache = this.disableCache;
         }
     }
 
@@ -3364,7 +3455,7 @@ QueueManager.prototype.assertUniqueDataPoints = function () {
 QueueManager.prototype.checkForUpdates = function () {
     function versionCheckHandler(response) {
         var upgradeElt,
-            version = 2.8,
+            version = 2.9,
             latestVersion = -1,
             result = /@version\s+([\d\.]+)/.exec(response.responseText);
 
@@ -3434,7 +3525,7 @@ QueueManager.prototype.init = function () {
             //this.switchToNoMoreCancelMode();
             //this.setStatus('[Reloading page...]');
             //window.location.reload(true);
-            this.setStatus('[If the order didn\'t change, reload the page.]');
+            this.setStatus('[If the order didn\'t change, <a href="javascript:window.location.reload()">reload</a> the page.]');
         }
     }
 
