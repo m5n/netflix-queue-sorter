@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 2.9 2012-06-30
+// Version 2.10 2012-06-30
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     2.9
-// @description v2.9: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, and sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
+// @version     2.10
+// @description v2.10: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, and sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
 // @include     http://movies.netflix.com/Queue*
 // @include     http://dvd.netflix.com/Queue*
 // @include     http://www.netflix.com/Queue*
@@ -931,7 +931,13 @@ NetflixDetailsPageRetriever.prototype.extractMediaFormat = function (id, dom) {
         }
 
         formatElt = this.extractDdElt(dom, 'Streaming');
-        if (undefined !== formatElt) {
+        if (undefined === formatElt) {
+            if (QueueManager.QUEUE_INSTANT === this.getQueueId()) {
+                formats.push('STREAMING');
+            } else {
+                formats.push('DVD');
+            }
+        } else {
             formats.push('STREAMING');
             if (/HD/.test(formatElt.innerHTML)) {
                 formats.push('HD');
@@ -1269,7 +1275,8 @@ QueueManager.prototype.extractTitle = function (trElt) {
 //       JSON.parse(JSON.stringify(new Date())) does not return a Date object.
 //       Can we make this work?
 QueueManager.prototype.extractPlayability = function (trElt) {
-    var elt = trElt.getElementsByClassName('wn')[0],
+    var elt = trElt.getElementsByClassName(
+            QueueManager.QUEUE_INSTANT === this.getQueueId() ? 'wn' : 'wi')[0],
         // Note: to avoid extra work in the sort fn, convert to a
         // case-insensitive string comparison format here.
         value = elt.innerHTML.trim().toUpperCase(),
@@ -2632,7 +2639,15 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
             id: 'd100',
             text: 'TV/Movies',
             title: 'Move the TV Shows genre above movie genres and sort by title',
-            queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
+            queues: [QueueManager.QUEUE_DVD],
+            config: [{command: 'sort', fields: ['genre', 'title'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], cacheKey: 'sort-order-custom-genre-' + this.getQueueId(), defaultOrder: ['Television']}]
+        },
+        {
+            // Add sort by title to make sure series discs are in asc order.
+            id: 'd101',
+            text: 'TV/Movies',
+            title: 'Move the TV Shows genre above movie genres and sort by title',
+            queues: [QueueManager.QUEUE_INSTANT],
             config: [{command: 'sort', fields: ['genre', 'title'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], cacheKey: 'sort-order-custom-genre-' + this.getQueueId(), defaultOrder: ['TV Shows']}]
         },
         {
@@ -2904,7 +2919,7 @@ QueueManager.prototype.getUiUnsupportedCssTemplate = function () {
 QueueManager.prototype.getUiHtmlTemplate = function () {
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.9</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.10</legend>' +
             '<div id="nqs-controls">' +
                 // JSLint does not like these javascript hrefs (true, they do
                 // not follow the semantic layered markup rules), but at least
@@ -2977,7 +2992,7 @@ QueueManager.prototype.getUiUnsupportedHtmlTemplate = function () {
     // TODO: FUTURE: add Opera,IE here once it's supported.
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.9</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.10</legend>' +
             'Your browser is not supported.  Please use the latest ' +
             'version of Chrome, Firefox or Safari.' +
         '</fieldset>';
@@ -3455,7 +3470,7 @@ QueueManager.prototype.assertUniqueDataPoints = function () {
 QueueManager.prototype.checkForUpdates = function () {
     function versionCheckHandler(response) {
         var upgradeElt,
-            version = 2.9,
+            version = 2.10,
             latestVersion = -1,
             result = /@version\s+([\d\.]+)/.exec(response.responseText);
 
