@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 2.10 2012-06-30
+// Version 2.91 2012-07-04
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     2.10
-// @description v2.10: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, and sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
+// @version     2.91
+// @description v2.91: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
 // @include     http://movies.netflix.com/Queue*
 // @include     http://dvd.netflix.com/Queue*
 // @include     http://www.netflix.com/Queue*
@@ -54,7 +54,7 @@
 
 
 // TODO: FUTURE: check TODO list and forum discussions for more work
-// TODO: FUTURE: Make this script run in Opera and IE!
+// TODO: FUTURE: Make this script run in IE!
 
 
 
@@ -2325,7 +2325,6 @@ QueueManager.prototype.switchToUserMode = function () {
 // necessary except for the actual sort, which is done by doSort().
 QueueManager.prototype.prepSort = function (evt) {
     var button = evt.target || window.event.source,
-        // TODO: FUTURE: Opera gets a parse error on the next line.
         configObj = JSON.parse(button.getAttribute('nqs-config')),
         sortCommandConfig,
         retrievers,
@@ -2802,6 +2801,7 @@ QueueManager.prototype.getUiContainerCssTemplate = function () {
             'color: #666666;' +
             'font-size: smaller;' +
             'padding: 0 0.5em;' +
+            'margin: 0 auto;' +   // Fixes text-alignment in Opera.
         '}';
 };
 
@@ -2885,8 +2885,7 @@ QueueManager.prototype.getUiCssTemplate = function () {
             'float: none;' +
         '}' +
         '#netflix-queue-sorter input#nqs-use-sort-limit-rows {' +
-            'position: relative;' +
-            'top: 3px;' +
+            'vertical-align: middle;' +
         '}' +
 
         // Config UI.
@@ -2919,7 +2918,7 @@ QueueManager.prototype.getUiUnsupportedCssTemplate = function () {
 QueueManager.prototype.getUiHtmlTemplate = function () {
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.10</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.91</legend>' +
             '<div id="nqs-controls">' +
                 // JSLint does not like these javascript hrefs (true, they do
                 // not follow the semantic layered markup rules), but at least
@@ -2989,12 +2988,12 @@ QueueManager.prototype.getUiHtmlTemplate = function () {
 };
 
 QueueManager.prototype.getUiUnsupportedHtmlTemplate = function () {
-    // TODO: FUTURE: add Opera,IE here once it's supported.
+    // TODO: FUTURE: add IE here once it's supported.
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.10</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.91</legend>' +
             'Your browser is not supported.  Please use the latest ' +
-            'version of Chrome, Firefox or Safari.' +
+            'version of Chrome, Firefox, Opera or Safari.' +
         '</fieldset>';
 };
 
@@ -3470,14 +3469,30 @@ QueueManager.prototype.assertUniqueDataPoints = function () {
 QueueManager.prototype.checkForUpdates = function () {
     function versionCheckHandler(response) {
         var upgradeElt,
-            version = 2.10,
-            latestVersion = -1,
+            currentVersion = "2.91",   // Must be String for split usage below.
+            latestVersion,
             result = /@version\s+([\d\.]+)/.exec(response.responseText);
 
         if (result) {
-            latestVersion = Number(result[1]);
+            latestVersion = result[1];   // Keep as String.
 
-            if (latestVersion > version) {
+            // Must compare numbers w/o decimals, otherwise 2.10 < 2.9.
+            // Also make sure 3.0 > 2.10, so don't just strip the comma.
+            // Convert to objects to make logic more readable.
+            currentVersion = currentVersion.split('.');
+            currentVersion = {
+                major: Number(currentVersion[0]),
+                minor: Number(currentVersion[1])
+            };
+            latestVersion = latestVersion.split('.');
+            latestVersion = {
+                major: Number(latestVersion[0]),
+                minor: Number(latestVersion[1])
+            };
+
+            if (latestVersion.major > currentVersion.major ||
+                    (latestVersion.major === currentVersion.major &&
+                    latestVersion.minor > currentVersion.minor)) {
                 upgradeElt = document.getElementById('nqs-icon-update');
                 upgradeElt.style.display = 'block';
                 // TODO: NOW: add a CSS class; don't set style props via JS.
@@ -3489,7 +3504,8 @@ QueueManager.prototype.checkForUpdates = function () {
         }
     }
 
-    // TODO: FUTURE: Opera does not support GM_xmlhttpRequest.
+    // TODO: FUTURE: Opera does not support GM_xmlhttpRequest; Chrome does not
+    //               support cross-domain XHRs.
     GM_xmlhttpRequest({
         method: 'GET',
         url: 'http://userscripts.org/scripts/source/35183.meta.js',
