@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 2.91 2012-07-04
+// Version 2.92 2012-07-15
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     2.91
-// @description v2.91: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
+// @version     2.92
+// @description v2.92: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
 // @include     http://movies.netflix.com/Queue*
 // @include     http://dvd.netflix.com/Queue*
 // @include     http://www.netflix.com/Queue*
@@ -70,7 +70,14 @@ function GM_getValue(key) {
 function GM_setValue(key, value) {
     gmCache[key] = value;
 }
-function GM_xmlhttpRequest(config) {
+*/
+
+
+
+// Alternative for browsers who do not have the GM method, AND for getting
+// around the "browser is configured to block third-party cookies" issue;
+// see https://github.com/greasemonkey/greasemonkey/issues/1169
+function GM_xmlhttpRequest2(config) {
     // Thanks, http://www.quirksmode.org/js/xmlhttp.html
     var urlMap,
         XMLHttpFactories = [
@@ -110,7 +117,7 @@ function GM_xmlhttpRequest(config) {
             return;
         }
         req.open(method, url, true);
-        req.setRequestHeader('User-Agent', 'XMLHTTP/1.0');
+        //req.setRequestHeader('User-Agent', 'XMLHTTP/1.0');
         if (postData) {
             req.setRequestHeader('Content-type',
                     'application/x-www-form-urlencoded');
@@ -164,7 +171,12 @@ function GM_xmlhttpRequest(config) {
     sendRequest(config.url, config.onload, config.method, config.data,
             config.onerror, config.onreadystatechange);
 }
-*/
+
+// Add support for GM_xmlHttpRequest function for those browsers who do not
+// have it, e.g. Opera.
+if ("undefined" === typeof GM_xmlhttpRequest) {
+    window.GM_xmlhttpRequest = GM_xmlhttpRequest2;
+}
 
 
 
@@ -648,10 +660,8 @@ var NetflixDetailsPageRetriever = function () {
         commonSenseRating: { extractFn: 'extractCommonSenseRating', selectable:  true, display: 'Common Sense Rating' },
         numRatings:        { extractFn: 'extractNumRatings',        selectable:  true, display: 'Number of Ratings' },
         numDiscs:          { extractFn: 'extractNumDiscs',          selectable:  true, display: 'Number of Discs' },
-        mediaFormat:       { extractFn: 'extractMediaFormat',       selectable:  true, display: 'Media Format' }
-/* TODO: FUTURE: no longer available; check later if it's back
-        dateAdded:         { extractFn: 'extractDateAdded',         selectable:  true, display: 'Date Added' },
-*/
+        mediaFormat:       { extractFn: 'extractMediaFormat',       selectable:  true, display: 'Media Format' },
+        dateAdded:         { extractFn: 'extractDateAdded',         selectable:  true, display: 'Date Added' }
 /* TODO: FUTURE: member reviews are loaded after page load; check later if it's changed
         reviews:           { extractFn: 'extractReviews',           selectable:  true, display: 'Reviews' }
 */
@@ -690,14 +700,27 @@ NetflixDetailsPageRetriever.prototype.extractRating = function (dom, idx) {
     // http://www.netflix.com/Movie/70077737?trkid=226871
     var rating,
         elts = dom.getElementsByClassName('rating'),
-        txt;
+        txt = '';
 
-    if (elts.length > idx) {
+    // Instant accounts have 2 class="rating" elements.
+    // DVD account have 2 only for rated movies.  Not-yet-rated movies only
+    // have the average rating as class="rating"; the star rating will have to
+    // be retrieved via the class="starbar" element.
+    if (elts.length === 2) {
         txt = elts[idx].innerHTML;
-
-        if (/([\d\.]+)/.test(txt)) {
-            rating = Number(RegExp.$1);
+    } else {
+        if (idx === 0) {
+            // Star rating is the first class="starbar" element.
+            elts = dom.getElementsByClassName('starbar');
+            txt = elts[0].getElementsByClassName('stbrMaskFg')[0].innerHTML;
+        } else {
+            // Average rating is only class="rating" element.
+            txt = elts[0].innerHTML;
         }
+    }
+
+    if (/([\d\.]+)/.test(txt)) {
+        rating = Number(RegExp.$1);
     }
 
     return rating;
@@ -725,7 +748,19 @@ NetflixDetailsPageRetriever.prototype.extractDdElt = function (dom, dtVal) {
 
     for (ii = 0; ii < dts.length; ii += 1) {
         if (dts[ii].innerHTML === dtVal) {
-            ddElt = dts[ii].parentNode.getElementsByTagName('dd')[0];
+            // For Instant accounts, the dt and dd are together within one
+            // parent element.  For DVD accounts, all dt and dds are within
+            // a parent.  So, count back down from the parent.
+            dds = dts[ii].parentNode.getElementsByTagName('dd');
+            dts = dts[ii].parentNode.getElementsByTagName('dt');
+
+            for (ii = 0; ii < dts.length; ii += 1) {
+                if (dts[ii].innerHTML === dtVal) {
+                    ddElt = dds[ii];
+                    break;
+                }
+            }
+
             break;
         }
     }
@@ -748,6 +783,7 @@ NetflixDetailsPageRetriever.prototype.extractLanguage = function (id, dom) {
     return language;
 };
 
+// Returns length in seconds.
 NetflixDetailsPageRetriever.prototype.extractLength = function (id, dom) {
     // Some discs have no length, e.g.
     // http://movies.netflix.com/Movie/Frontier-House-Disc-2/60028868?trkid=226871
@@ -932,11 +968,12 @@ NetflixDetailsPageRetriever.prototype.extractMediaFormat = function (id, dom) {
 
         formatElt = this.extractDdElt(dom, 'Streaming');
         if (undefined === formatElt) {
-            if (QueueManager.QUEUE_INSTANT === this.getQueueId()) {
-                formats.push('STREAMING');
-            } else {
-                formats.push('DVD');
-            }
+            // TODO: this is not QueueManager, so cannot use this.
+            //if (QueueManager.QUEUE_INSTANT === this.getQueueId()) {
+            //    formats.push('STREAMING');
+            //} else {
+            //    formats.push('DVD');
+            //}
         } else {
             formats.push('STREAMING');
             if (/HD/.test(formatElt.innerHTML)) {
@@ -1049,7 +1086,9 @@ NetflixDetailsPageRetriever.prototype.asyncRetrieveMovieData = function (
         callback.call(self);
     }
 
-    GM_xmlhttpRequest({
+    // Use alternative implementation for all browsers to get around the
+    // "browser is configured to block third-party cookies" issue.
+    GM_xmlhttpRequest2({
         method: 'GET',
         url: url,
         onload: parsePage,
@@ -2478,12 +2517,12 @@ QueueManager.prototype.doCancelSort = function () {
 
         // Clear status message after a few seconds.
         // Note: to avoid a race condition where user starts and cancels another
-        // sort before the timer runs out, we're saving the timer ID so that we can
-        // cancel it if a new sort is started.
+        // sort before the timer runs out, we're saving the timer ID so that we
+        // can cancel it if a new sort is started.
         self.clearStatusTimerId = setTimeout(function () {
             self.clearStatusTimerId = undefined;
             self.setStatus('');
-        }, 2500);
+        }, 2000);
     }, 2 * Retriever.XHR_DELAY);
 };
 
@@ -2700,17 +2739,15 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
             title: 'Sort your queue alphabetically by language',
             queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
             config: [{command: 'sort', fields: ['language', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_ASC, QueueManager.SORT_ASC]}]
-        }
-/* TODO: FUTURE: no longer available; check later if it's back
+        },
         {
             id: 'd170',
             text: 'Date Added',
             title: 'Sort your queue by the date movies were added to the queue',
-            queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
+            queues: [QueueManager.QUEUE_DVD],
             // Note: Chrome needs 'order' as secondary sort to keep current order.
             config: [{command: 'sort', fields: ['dateAdded', 'order'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_ASC, QueueManager.SORT_ASC], defaultOrder: ['{date}']}]
-        },
-*/
+        }
 /* TODO: FUTURE: member reviews are loaded after page load; check later if it's changed
         {
             // Add sort by title to make sure series discs are in asc order.
@@ -2918,7 +2955,7 @@ QueueManager.prototype.getUiUnsupportedCssTemplate = function () {
 QueueManager.prototype.getUiHtmlTemplate = function () {
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.91</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.92</legend>' +
             '<div id="nqs-controls">' +
                 // JSLint does not like these javascript hrefs (true, they do
                 // not follow the semantic layered markup rules), but at least
@@ -2991,7 +3028,7 @@ QueueManager.prototype.getUiUnsupportedHtmlTemplate = function () {
     // TODO: FUTURE: add IE here once it's supported.
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.91</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.92</legend>' +
             'Your browser is not supported.  Please use the latest ' +
             'version of Chrome, Firefox, Opera or Safari.' +
         '</fieldset>';
@@ -3467,9 +3504,11 @@ QueueManager.prototype.assertUniqueDataPoints = function () {
 };
 
 QueueManager.prototype.checkForUpdates = function () {
+    var self = this;
+
     function versionCheckHandler(response) {
         var upgradeElt,
-            currentVersion = "2.91",   // Must be String for split usage below.
+            currentVersion = "2.92",   // Must be String for split usage below.
             latestVersion,
             result = /@version\s+([\d\.]+)/.exec(response.responseText);
 
