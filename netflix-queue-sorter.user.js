@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 2.92 2012-07-15
+// Version 2.93 2012-07-20
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     2.92
-// @description v2.92: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
+// @version     2.93
+// @description v2.93: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
 // @include     http://movies.netflix.com/Queue*
 // @include     http://dvd.netflix.com/Queue*
 // @include     http://www.netflix.com/Queue*
@@ -153,19 +153,6 @@ function GM_xmlhttpRequest2(config) {
             return;
         }
         req.send(postData);
-    }
-
-    urlMap = {
-        'http://userscripts.org/scripts/show/35183': 'us.org.html',
-        'http://www.netflix.com/Movie/60024922': '60024922.html',
-        'http://www.netflix.com/Movie/70122307': '70122307.html',
-        'http://www.netflix.com/Movie/60028867': '60028867.html',
-        'http://www.netflix.com/Movie/60028868': '60028868.html',
-        'http://www.netflix.com/Movie/70022103': '70022103.html',
-        'http://www.netflix.com/Movie/70023939': '70023939.html'
-    };
-    if (urlMap[config.url]) {
-        config.url = urlMap[config.url];
     }
 
     sendRequest(config.url, config.onload, config.method, config.data,
@@ -679,10 +666,13 @@ var NetflixDetailsPageRetriever = function () {
 };
 
 // Netflix movie details URL.
-// Note: Chrome does not support cross-domain XHR so need to use server name!
-NetflixDetailsPageRetriever.DETAILS_PAGE_URL =
-        'http://' + (window.location.host ? window.location.host
-            : 'movies.netflix.com') + '/Movie/{movieId}';
+// Note: Chrome and Opera do not support cross-domain XHR so use server name.
+NetflixDetailsPageRetriever.DETAILS_PAGE_URL = (function () {
+    var hostname = window.location.host || 'movies.netflix.com';
+
+    return 'http://' + hostname + (/dvd/i.test(hostname) ?
+        '/Movie/{movieId}' : '/movie/{movieId}?fdvd=true');
+}());
 
 NetflixDetailsPageRetriever.prototype = new Retriever();
 
@@ -777,7 +767,7 @@ NetflixDetailsPageRetriever.prototype.extractLanguage = function (id, dom) {
     if (undefined === langElt) {
         language = 'English';
     } else {
-        language = langElt.innerHTML;
+        language = this.trim(langElt.innerHTML);
     }
 
     return language;
@@ -1318,7 +1308,7 @@ QueueManager.prototype.extractPlayability = function (trElt) {
             QueueManager.QUEUE_INSTANT === this.getQueueId() ? 'wn' : 'wi')[0],
         // Note: to avoid extra work in the sort fn, convert to a
         // case-insensitive string comparison format here.
-        value = elt.innerHTML.trim().toUpperCase(),
+        value = this.trim(elt.innerHTML).toUpperCase(),
         result;
 
     if (value.indexOf('<A ') >= 0) {
@@ -1380,14 +1370,14 @@ QueueManager.prototype.extractAvailability = function (trElt) {
 
             // Note: to avoid extra work in the sort fn, convert to a
             // case-insensitive string comparison format here.
-            result = elt.innerHTML.trim().toUpperCase();
+            result = this.trim(elt.innerHTML).toUpperCase();
             if (/UNAVAILABLE/.test(result)) {
                 // To avoid conflicts with AVAILABLE text search, use N/A.
                 result = 'N/A';
             }
         } else if (elt.getElementsByTagName('em').length > 0) {
-            result = elt.getElementsByTagName('em')[
-                    0].innerHTML.trim().toUpperCase();
+            result = this.trim(elt.getElementsByTagName('em')[
+                    0].innerHTML).toUpperCase();
         }
     }
 
@@ -2955,7 +2945,7 @@ QueueManager.prototype.getUiUnsupportedCssTemplate = function () {
 QueueManager.prototype.getUiHtmlTemplate = function () {
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.92</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.93</legend>' +
             '<div id="nqs-controls">' +
                 // JSLint does not like these javascript hrefs (true, they do
                 // not follow the semantic layered markup rules), but at least
@@ -3028,7 +3018,7 @@ QueueManager.prototype.getUiUnsupportedHtmlTemplate = function () {
     // TODO: FUTURE: add IE here once it's supported.
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.92</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.93</legend>' +
             'Your browser is not supported.  Please use the latest ' +
             'version of Chrome, Firefox, Opera or Safari.' +
         '</fieldset>';
@@ -3508,7 +3498,7 @@ QueueManager.prototype.checkForUpdates = function () {
 
     function versionCheckHandler(response) {
         var upgradeElt,
-            currentVersion = "2.92",   // Must be String for split usage below.
+            currentVersion = "2.93",   // Must be String for split usage below.
             latestVersion,
             result = /@version\s+([\d\.]+)/.exec(response.responseText);
 
@@ -3537,14 +3527,14 @@ QueueManager.prototype.checkForUpdates = function () {
                 // TODO: NOW: add a CSS class; don't set style props via JS.
             }
         } else {
-            // Chrome will get here as it does not support cross-domain XHR yet.
+            // Chrome and Opera will get here as they does not support
+            // cross-domain XHR.
             // See http://code.google.com/p/chromium/issues/detail?id=18857#c111
             throw new Error("Parse error: " + JSON.stringify(response));
         }
     }
 
-    // TODO: FUTURE: Opera does not support GM_xmlhttpRequest; Chrome does not
-    //               support cross-domain XHRs.
+    // TODO: FUTURE: Chrome and Opera do not support cross-domain XHRs.
     GM_xmlhttpRequest({
         method: 'GET',
         url: 'http://userscripts.org/scripts/source/35183.meta.js',
