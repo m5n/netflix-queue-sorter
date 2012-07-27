@@ -3,7 +3,7 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 2.93 2012-07-20
+// Version 2.94 2012-07-27
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
@@ -11,8 +11,8 @@
 // @name        Netflix Queue Sorter
 // @namespace   http://userscripts.org/users/64961
 // @author      Maarten
-// @version     2.93
-// @description v2.93: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
+// @version     2.94
+// @description v2.94: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
 // @include     http://movies.netflix.com/Queue*
 // @include     http://dvd.netflix.com/Queue*
 // @include     http://www.netflix.com/Queue*
@@ -58,29 +58,36 @@
 
 
 
-// Development-only code for developing and testing outside of the GM env.
 /*
-var gmCache = {
-    'debug-mode': true,   // Always true for development mode.
-    'auto-update': false   // Always false for development mode.
-};
-function GM_getValue(key) {
-    return gmCache[key];
-}
-function GM_setValue(key, value) {
-    gmCache[key] = value;
-}
+This object defines constant values used throughout the script.
 */
+var Constants = {};
+
+// These are the queue types Netflix offers.
+Constants.QUEUE_DVD = 'dvd';
+Constants.QUEUE_INSTANT = 'instant';
+
+// Factory defaults.
+Constants.DEFAULTS = {
+    'use-cache': true,
+    'show-info-icons': true,
+    'force-refresh': false,
+    'auto-update': true,
+    'ignore-articles': true,
+    'slow-sort-indicator': '',
+    'debug-mode': false
+};
+Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_DVD] = 'http://{hostName}/Movie/{movieId}';
+Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_INSTANT] = 'http://{hostName}/movie/{movieId}?fdvd=true';
 
 
 
-// Alternative for browsers who do not have the GM method, AND for getting
-// around the "browser is configured to block third-party cookies" issue;
-// see https://github.com/greasemonkey/greasemonkey/issues/1169
+// Alternative for browsers who do not have the GM_xmlhttpRequest method, AND
+// for getting around the "browser is configured to block third-party cookies"
+// issue; see https://github.com/greasemonkey/greasemonkey/issues/1169
 function GM_xmlhttpRequest2(config) {
     // Thanks, http://www.quirksmode.org/js/xmlhttp.html
-    var urlMap,
-        XMLHttpFactories = [
+    var XMLHttpFactories = [
             function () {
                 return new XMLHttpRequest();
             },
@@ -217,6 +224,9 @@ var Retriever = function (id, config) {
     this.selectableDataPoints = selectableDataPoints;
     this.allDataPointConfig = config;
 
+    // Queue ID.
+    this.queueId = undefined;   // Initialized in initConfigOptions().
+
     // Debug mode.
     this.isDebug = false;   // Initialized in initConfigOptions().
 
@@ -230,16 +240,16 @@ Retriever.XHR_DELAY = 1000 / 4;   // 4 requests per second, in milliseconds
 
 Retriever.prototype = {
     debug: function (msg) {
-        // Do this check only once and redefine function.
-        if ("undefined" !== typeof GM_log) {
+        // Check this only once and then redefine this function.
+        if ("undefined" !== typeof console) {
+            Retriever.prototype.debug = function (msg) {
+                console.log(msg);
+            };
+        } else if ("undefined" !== typeof GM_log) {
             Retriever.prototype.debug = function (msg) {
                 // See http://wiki.greasespot.net/GM_log for how to make msgs
                 // appear.
                 GM_log(msg);
-            };
-        } else if ("undefined" !== typeof console) {
-            Retriever.prototype.debug = function (msg) {
-                console.log(msg);
             };
         } else {
             Retriever.prototype.debug = function (msg) {
@@ -261,13 +271,11 @@ Retriever.prototype = {
     customAddEventListener: function (elt, type, handler) {
         // Check this only once and then redefine this function.
         if (elt.addEventListener) {
-            Retriever.prototype.customAddEventListener = function (
-                    elt, type, handler) {
+            Retriever.prototype.customAddEventListener = function (elt, type, handler) {
                 elt.addEventListener(type, handler, false);
             };
         } else if (elt.attachEvent) {
-            Retriever.prototype.customAddEventListener = function (
-                    elt, type, handler) {
+            Retriever.prototype.customAddEventListener = function (elt, type, handler) {
                 elt.attachEvent("on" + type, handler);
             };
         }
@@ -279,7 +287,8 @@ Retriever.prototype = {
     // Replaces "{key}" substrings with their associated value.
     substituteVars: function (str, kvPairs) {
         // Thanks, http://javascript.crockford.com/remedial.html
-        return str.replace(/\{([^\{\}]*)\}/g,
+        return str.replace(
+            /\{([^\{\}]*)\}/g,
             function (a, b) {
                 var r = kvPairs[b];
                 return typeof r === 'string' || typeof r === 'number' ? r : a;
@@ -314,13 +323,15 @@ Retriever.prototype = {
             value = localStorage[key];
         }
 
+        // Avoid breakage of JSON.parse below.
+        if ('' === value || "undefined" === value) {
+            value = undefined;
+        }
+
         if (undefined !== value && null !== value) {
             value = JSON.parse(value);
         } else if (undefined !== defaultValue) {
             value = defaultValue;
-            // To avoid adding to browser cache, don't store default value.
-            // Default values are set and changed via the config UI only.
-            //this.setCacheValue(key, value);
         }
         return value;
     },
@@ -403,7 +414,7 @@ Retriever.prototype = {
 
         // TODO: PERFORMANCE: split this into numeric and string sort fn to
         // avoid so many ifs.
-        if (typeof a === Number && typeof b === Number) {
+        if (typeof a === 'number' && typeof b === 'number') {
             result = a - b;
 
         // Missing optional values should always go at the end.
@@ -560,7 +571,7 @@ Retriever.prototype = {
         // as some retrievers always can return the latest data w/o penalty,
         // e.g. queueRetriever.
 
-        var forceRefresh = this.getCacheValue('force-refresh', false),
+        var forceRefresh = this.getCacheValue('force-refresh', Constants.DEFAULTS['force-refresh']),
             fieldsToRetrieve = [],
             ff,
             cc,
@@ -664,15 +675,6 @@ var NetflixDetailsPageRetriever = function () {
 
     Retriever.call(this, 'netflix-details-page', config);
 };
-
-// Netflix movie details URL.
-// Note: Chrome and Opera do not support cross-domain XHR so use server name.
-NetflixDetailsPageRetriever.DETAILS_PAGE_URL = (function () {
-    var hostname = window.location.host || 'movies.netflix.com';
-
-    return 'http://' + hostname + (/dvd/i.test(hostname) ?
-        '/Movie/{movieId}' : '/movie/{movieId}?fdvd=true');
-}());
 
 NetflixDetailsPageRetriever.prototype = new Retriever();
 
@@ -828,8 +830,7 @@ NetflixDetailsPageRetriever.prototype.extractLength = function (id, dom) {
     return len;
 };
 
-NetflixDetailsPageRetriever.prototype.extractMaturityRating = function (
-            dom, className) {
+NetflixDetailsPageRetriever.prototype.extractMaturityRating = function (dom, className) {
     var rating,
         elts = dom.getElementsByClassName(className);
 
@@ -857,7 +858,7 @@ NetflixDetailsPageRetriever.prototype.extractMpaaRating = function (id, dom) {
     //         Not rated. This movie has not been rated.
     //     </p>
     // </div>
-    
+
     // Movies.n.c uses certRating, but www.n.c uses mpaaRating.
     var rating = this.extractMaturityRating(dom, 'certRating');
     if (undefined === rating) {
@@ -866,8 +867,7 @@ NetflixDetailsPageRetriever.prototype.extractMpaaRating = function (id, dom) {
     return rating;
 };
 
-NetflixDetailsPageRetriever.prototype.extractCommonSenseRating = function (
-            id, dom) {
+NetflixDetailsPageRetriever.prototype.extractCommonSenseRating = function (id, dom) {
     // <div class="maturityRating csmRating csmRating-IFFY clearfix">
     //     <a href="http://movies.netflix.com/Movie/Fantastic_Planet/17968278?csm=true" class="value">12</a>
     //     <p>
@@ -958,12 +958,11 @@ NetflixDetailsPageRetriever.prototype.extractMediaFormat = function (id, dom) {
 
         formatElt = this.extractDdElt(dom, 'Streaming');
         if (undefined === formatElt) {
-            // TODO: this is not QueueManager, so cannot use this.
-            //if (QueueManager.QUEUE_INSTANT === this.getQueueId()) {
-            //    formats.push('STREAMING');
-            //} else {
-            //    formats.push('DVD');
-            //}
+            if (Constants.QUEUE_INSTANT === this.queueId) {
+                formats.push('STREAMING');
+            } else {
+                formats.push('DVD');
+            }
         } else {
             formats.push('STREAMING');
             if (/HD/.test(formatElt.innerHTML)) {
@@ -1035,12 +1034,12 @@ NetflixDetailsPageRetriever.prototype.extractDateAdded = function (id, dom) {
     }
 };
 
-NetflixDetailsPageRetriever.prototype.asyncRetrieveMovieData = function (
-        fields, cache, callback) {
+NetflixDetailsPageRetriever.prototype.asyncRetrieveMovieData = function (fields, cache, callback) {
     var self = this,
         url = this.substituteVars(
-                NetflixDetailsPageRetriever.DETAILS_PAGE_URL,
-                { movieId: cache.movieId });
+            this.getCacheValue('detail-page-url-' + this.queueId, Constants.DEFAULTS['detail-page-url-' + this.queueId]),
+            { hostName: window.location.host, movieId: cache.movieId }
+        );
 
     function parsePage(response) {
         var ff,
@@ -1144,15 +1143,8 @@ var QueueManager = function () {
     // de/serializing this potentially big object.
     this.cachedData = {};   // Initialized in showCachedData().
 
-    // Should a button press auto-update the queue?
-    this.autoUpdate = true;   // Initialized in initConfigOptions().
-
     Retriever.call(this, 'netflix-queue', config);
 };
-
-// These are the queue types Netflix exposes.
-QueueManager.QUEUE_DVD = 'dvd';
-QueueManager.QUEUE_INSTANT = 'instant';
 
 // Use numeric values for the sort directions to avoid an IF condition and
 // a string comparison in the sort function.
@@ -1164,13 +1156,14 @@ QueueManager.prototype = new Retriever();
 QueueManager.prototype.initConfigOptions = function () {
     var rr;
 
-    this.isDebug = this.getCacheValue('debug-mode', false);
+    this.queueId = this.getQueueId();
+    this.isDebug = this.getCacheValue('debug-mode', Constants.DEFAULTS['debug-mode']);
+
     // Also apply to all retrievers.
     for (rr = 0; rr < this.allNonQueueRetrievers.length; rr += 1) {
+        this.allNonQueueRetrievers[rr].queueId = this.queueId;
         this.allNonQueueRetrievers[rr].isDebug = this.isDebug;
     }
-
-    this.autoUpdate = this.getCacheValue('auto-update', true);
 };
 
 QueueManager.prototype.createSortIndependentLookups = function () {
@@ -1242,7 +1235,7 @@ QueueManager.prototype.extractTitle = function (trElt) {
         self = this,
 
         // Use true as default as Netflix' sorts ignore articles too.
-        ignoreArticles = this.getCacheValue('ignore-articles', true),
+        ignoreArticles = this.getCacheValue('ignore-articles', Constants.DEFAULTS['ignore-articles']),
 
         // The articles are used "as-is", so there must be a space after
         // each one in most cases.
@@ -1304,8 +1297,7 @@ QueueManager.prototype.extractTitle = function (trElt) {
 //       JSON.parse(JSON.stringify(new Date())) does not return a Date object.
 //       Can we make this work?
 QueueManager.prototype.extractPlayability = function (trElt) {
-    var elt = trElt.getElementsByClassName(
-            QueueManager.QUEUE_INSTANT === this.getQueueId() ? 'wn' : 'wi')[0],
+    var elt = trElt.getElementsByClassName(Constants.QUEUE_INSTANT === this.queueId ? 'wn' : 'wi')[0],
         // Note: to avoid extra work in the sort fn, convert to a
         // case-insensitive string comparison format here.
         value = this.trim(elt.innerHTML).toUpperCase(),
@@ -1376,8 +1368,7 @@ QueueManager.prototype.extractAvailability = function (trElt) {
                 result = 'N/A';
             }
         } else if (elt.getElementsByTagName('em').length > 0) {
-            result = this.trim(elt.getElementsByTagName('em')[
-                    0].innerHTML).toUpperCase();
+            result = this.trim(elt.getElementsByTagName('em')[0].innerHTML).toUpperCase();
         }
     }
 
@@ -1610,27 +1601,26 @@ QueueManager.prototype.commitSort = function (cache) {
         maxRow = this.maxSelectedRowIndex();
 
         // Save min/max row so they can be displayed when the page loads.
-        this.setCacheValue('last-min-row-' + this.getQueueId(), minRow);
-        this.setCacheValue('last-max-row-' + this.getQueueId(), maxRow);
+        this.setCacheValue('last-min-row-' + this.queueId, minRow);
+        this.setCacheValue('last-max-row-' + this.queueId, maxRow);
     } else {
         minRow = 0;
         maxRow = oElts.length - 1;
 
         // Don't save min/max row.
-        this.deleteCacheValue('last-min-row-' + this.getQueueId());
-        this.deleteCacheValue('last-max-row-' + this.getQueueId());
+        this.deleteCacheValue('last-min-row-' + this.queueId);
+        this.deleteCacheValue('last-max-row-' + this.queueId);
     }
 
     // Save current order for undo purposes.
     origOrder = {};
     for (rr = 0; rr < oElts.length; rr += 1) {
-        origOrder[this.extractMovieId(this.getTrEltForListOrderInput(
-                oElts[rr]))] = rr + 1;   // Don't use value in text field!
+        origOrder[this.extractMovieId(this.getTrEltForListOrderInput(oElts[rr]))] = rr + 1;   // Don't use value in text field!
     }
     if (this.isDebug) {
         this.debug('original order:\n' + JSON.stringify(origOrder));
     }
-    this.setCacheValue('undo-order-' + this.getQueueId(), origOrder);
+    this.setCacheValue('undo-order-' + this.queueId, origOrder);
 
     // Apply new sort order.
     orderChanged = false;
@@ -1661,7 +1651,7 @@ QueueManager.prototype.commitSort = function (cache) {
             }
         }
         */
-        if (this.autoUpdate) {
+        if (this.getCacheValue('auto-update', Constants.DEFAULTS['auto-update'])) {
             this.setStatus('[Reloading page...]');
             // TODO: NOW: using form submit does not require row change trigger above.
             //this.updateQueueButton.click();
@@ -1704,8 +1694,7 @@ QueueManager.prototype.determineBackupFields = function (fields) {
             // This is a queue field that needs to be retrieved.  Check if it
             // has a backup.
             for (rr = 0; rr < this.allNonQueueRetrievers.length; rr += 1) {
-                config = this.allNonQueueRetrievers[
-                        rr].getAllDataPointConfig();
+                config = this.allNonQueueRetrievers[rr].getAllDataPointConfig();
                 if (undefined !== config[field + '2']) {
                     backupFields[field + '2'] = field;
                     backupFieldsEmpty = false;
@@ -1714,7 +1703,7 @@ QueueManager.prototype.determineBackupFields = function (fields) {
             }
         }
     }
-    
+
     return backupFieldsEmpty ? undefined : backupFields;
 };
 
@@ -1835,9 +1824,7 @@ QueueManager.prototype.retrieveExternalData = function (sortableData,
     checkin = function (idx) {
         if (false === self.cancelled) {
             // Manager updates progress based on retriever's report.
-            self.setStatus('[Retrieving data... ' + Math.floor(
-                    progressBaseLine + 100 * (idx + 1) / sortableData.length) +
-                    '%]');
+            self.setStatus('[Retrieving data... ' + Math.floor(progressBaseLine + 100 * (idx + 1) / sortableData.length) + '%]');
         }
 
         // Manager lets retriever know if it should abort its processing.
@@ -1907,13 +1894,15 @@ QueueManager.prototype.retrieveExternalData = function (sortableData,
                 this.debug('\nAll callbacks received.');
             }
 
-            // We now have the latest data, so persist it for next time.
-            // Note: "this" = current retriever, "self" = queue manager.
-            self.setStatus('[Updating cache...]');
-            self.cachedData = newCache;
+            if (self.getCacheValue('use-cache', Constants.DEFAULTS['use-cache'])) {
+                // We now have the latest data, so persist it for next time.
+                // Note: "this" = current retriever, "self" = queue manager.
+                self.setStatus('[Updating cache...]');
+                self.cachedData = newCache;
 
-            key = 'movie-data-' + self.getQueueId();
-            self.setCacheValue(key, self.cachedData);
+                key = 'movie-data-' + self.queueId;
+                self.setCacheValue(key, self.cachedData);
+            }
 
             // No more callbacks pending.
             allDoneCallback.call(self, sortableData, configObj);
@@ -2100,8 +2089,7 @@ QueueManager.prototype.retrieveQueueDataCallback = function (data, configObj,
     for (ff in extraFieldToOrigLookup) {
         if (extraFieldToOrigLookup.hasOwnProperty(ff)) {
             for (rr = 0; rr < this.allNonQueueRetrievers.length; rr += 1) {
-                if (undefined !== this.allNonQueueRetrievers[
-                            rr].getAllDataPointConfig()[ff]) {
+                if (undefined !== this.allNonQueueRetrievers[rr].getAllDataPointConfig()[ff]) {
                     // We found the retriever for this backup field, is it in
                     // the list of retrievers already?
                     found = false;
@@ -2124,8 +2112,7 @@ QueueManager.prototype.retrieveQueueDataCallback = function (data, configObj,
                             }
                         }
                         if (!found) {
-                            extraRetrievers.push(
-                                    this.allNonQueueRetrievers[rr]);
+                            extraRetrievers.push(this.allNonQueueRetrievers[rr]);
                         }
                     }
                 }
@@ -2175,8 +2162,7 @@ QueueManager.prototype.retrieveQueueDataCallback = function (data, configObj,
         // returns, we can apply the backup fields to "data" and invoke the
         // external retrievers for the remaining data needed to perform the
         // sort.
-        this.retrieveExternalData(queueDataWithMissingFields, fakeConfigObj, 
-                extraRetrievers, function (sortableData, fakeConfigObj) {
+        this.retrieveExternalData(queueDataWithMissingFields, fakeConfigObj, extraRetrievers, function (sortableData, fakeConfigObj) {
             var ii,
                 id,
                 ff,
@@ -2216,14 +2202,12 @@ QueueManager.prototype.retrieveQueueDataCallback = function (data, configObj,
 
             // Now call (external) retrievers for the rest of the data we need
             // to do the sort.
-            this.retrieveExternalData(data, sortCommandConfig, retrievers, function (
-                    sortableData, sortCommandConfig) {
+            this.retrieveExternalData(data, sortCommandConfig, retrievers, function (sortableData, sortCommandConfig) {
                 self.doSort.call(self, sortableData, sortCommandConfig);
             });
         });
     } else {
-        this.retrieveExternalData(data, sortCommandConfig, retrievers, function (
-                sortableData, sortCommandConfig) {
+        this.retrieveExternalData(data, sortCommandConfig, retrievers, function (sortableData, sortCommandConfig) {
             self.doSort.call(self, sortableData, sortCommandConfig);
         });
     }
@@ -2281,8 +2265,7 @@ QueueManager.prototype.setStatus = function (status) {
 
 QueueManager.prototype.setElementsDisability = function (tagName, isDisabled) {
     var ee,
-        elts = document.getElementById(
-            'netflix-queue-sorter').getElementsByTagName(tagName);
+        elts = document.getElementById('netflix-queue-sorter').getElementsByTagName(tagName);
     for (ee = 0; ee < elts.length; ee += 1) {
         if (isDisabled) {
             elts[ee].setAttribute('disabled', 'disabled');
@@ -2331,8 +2314,7 @@ QueueManager.prototype.switchToUserMode = function () {
     var elts, ee;
 
     // Remove active button indication.
-    elts = document.getElementById(
-            'netflix-queue-sorter').getElementsByTagName('button');
+    elts = document.getElementById('netflix-queue-sorter').getElementsByTagName('button');
     for (ee = 0; ee < elts.length; ee += 1) {
         elts[ee].removeAttribute('class');
     }
@@ -2341,8 +2323,7 @@ QueueManager.prototype.switchToUserMode = function () {
     // Note: this will also hide the cancel button.
     elts = document.getElementsByClassName('nqs-icon-link');
     for (ee = 0; ee < elts.length; ee += 1) {
-        elts[ee].style.display = this.iconDisplayStates[
-                elts[ee].getAttribute('id')];
+        elts[ee].style.display = this.iconDisplayStates[elts[ee].getAttribute('id')];
     }
 
     // Enable all UI buttons and inputs.
@@ -2365,23 +2346,6 @@ QueueManager.prototype.prepSort = function (evt) {
     if (this.isDebug) {
         this.debug('prepSort: ' + JSON.stringify(configObj));
     }
-
-/* TODO: NOW: no longer needed? 
-    if (window.location.href.indexOf('movies.netflix.com') > 0) {
-        // Movies.netfix.com does not return new sort ordering immediately.
-        // Best results are on www.netflix.com
-        // TODO: FUTURE: Revisit this to see if Netflix fixed this.
-        if (confirm('Sorting works best on www.netflix.com.\nPress OK to go ' +
-                'there, or Cancel to stay where you are.')) {
-            if (QueueManager.QUEUE_INSTANT === this.getQueueId()) {
-                window.location = 'http://www.netflix.com/Queue?inqt=wn&lnkctr=queueTab-ELECTRONIC';
-            } else {
-                window.location = 'http://www.netflix.com/Queue?inqt=disc&lnkctr=queueTab-DISC';
-            }
-        }
-        return;
-    }
-*/
 
     // Hide Netflix' "Your Queue has been reordered" message.
     elts = document.getElementsByClassName('svfmsg-s');
@@ -2455,8 +2419,7 @@ QueueManager.prototype.prepSort = function (evt) {
         // Determine the retrievers involved in this sort.
         retrievers = [];
         for (ii = 0; ii < this.allNonQueueRetrievers.length; ii += 1) {
-            if (this.allNonQueueRetrievers[ii].canRetrieveData(
-                    sortCommandConfig.fields)) {
+            if (this.allNonQueueRetrievers[ii].canRetrieveData(sortCommandConfig.fields)) {
                 retrievers.push(this.allNonQueueRetrievers[ii]);
             }
         }
@@ -2475,22 +2438,170 @@ QueueManager.prototype.prepSort = function (evt) {
     this.retrieveData(fieldsToRetrieve, undefined, undefined, callback);
 };
 
-QueueManager.prototype.doConfigure = function () {
-    // TODO: NOW: finish implementation
-    alert('Comming soon: a UI for you to add your own sort buttons.');
-    return;
+QueueManager.prototype.doToggleConfig = function () {
+    var nqsElt = document.getElementById('netflix-queue-sorter');
 
-    var controlsUiElt = document.getElementById('nqs-controls'),
-        buttonsUiElt = document.getElementById('nqs-buttons'),
-        configUiElt = document.getElementById('nqs-config');
+    nqsElt.setAttribute('data-view', nqsElt.getAttribute('data-view') === 'sorter' ? 'config' : 'sorter');
+};
 
-    controlsUiElt.style.display = 'none';
-    buttonsUiElt.style.display = 'none';
-    configUiElt.style.display = 'block';
+QueueManager.prototype.doCancelConfig = function () {
+    var useCacheElt = document.getElementById('use-cache'),
+        showInfoIconsElt = document.getElementById('show-info-icons'),
+        forceRefreshElt = document.getElementById('force-refresh'),
+        autoUpdateElt = document.getElementById('auto-update'),
+        ignoreArticlesElt = document.getElementById('ignore-articles'),
+        slowSortIndicatorElt = document.getElementById('slow-sort-indicator'),
+        slowSortIndicatorTextElt = document.getElementById('slow-sort-indicator-text'),
+        debugModeElt = document.getElementById('debug-mode'),
+        dvdDetailPageUrlElt = document.getElementById('detail-page-url-' + Constants.QUEUE_DVD),
+        instantDetailPageUrlElt = document.getElementById('detail-page-url-' + Constants.QUEUE_INSTANT);
 
-    // TODO: FUTURE: add option for preferred format (HD, DVD, Blue-ray) for
-    //       DVD queue as details page could have different values for each
-    //       format (e.g. length).
+    // Restore option values.
+    useCacheElt.checked = this.getCacheValue('use-cache', Constants.DEFAULTS['use-cache']);
+    showInfoIconsElt.checked = this.getCacheValue('show-info-icons', Constants.DEFAULTS['show-info-icons']);
+    forceRefreshElt.checked = this.getCacheValue('force-refresh', Constants.DEFAULTS['force-refresh']);
+    autoUpdateElt.checked = this.getCacheValue('auto-update', Constants.DEFAULTS['auto-update']);
+    ignoreArticlesElt.checked = this.getCacheValue('ignore-articles', Constants.DEFAULTS['ignore-articles']);
+    slowSortIndicatorElt.checked = !!this.getCacheValue('slow-sort-indicator', Constants.DEFAULTS['slow-sort-indicator']);
+    slowSortIndicatorTextElt.value = this.getCacheValue('slow-sort-indicator', Constants.DEFAULTS['slow-sort-indicator']);
+    debugModeElt.checked = this.getCacheValue('debug-mode', Constants.DEFAULTS['debug-mode']);
+    dvdDetailPageUrlElt.value = this.getCacheValue('detail-page-url-' + Constants.QUEUE_DVD, Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_DVD]);
+    instantDetailPageUrlElt.value = this.getCacheValue('detail-page-url-' + Constants.QUEUE_INSTANT, Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_INSTANT]);
+
+    // Trigger event handlers.
+    this.doUpdateUseCacheSubOptions();
+
+    // Back to sorter view.
+    this.doToggleConfig();
+};
+
+QueueManager.prototype.doSaveConfig = function () {
+    var useCacheElt = document.getElementById('use-cache'),
+        showInfoIconsElt = document.getElementById('show-info-icons'),
+        forceRefreshElt = document.getElementById('force-refresh'),
+        autoUpdateElt = document.getElementById('auto-update'),
+        ignoreArticlesElt = document.getElementById('ignore-articles'),
+        slowSortIndicatorTextElt = document.getElementById('slow-sort-indicator-text'),
+        debugModeElt = document.getElementById('debug-mode'),
+        dvdDetailPageUrlElt = document.getElementById('detail-page-url-' + Constants.QUEUE_DVD),
+        instantDetailPageUrlElt = document.getElementById('detail-page-url-' + Constants.QUEUE_INSTANT),
+        elts,
+        ee,
+        sortMarker = this.trim(slowSortIndicatorTextElt.value);
+
+    // Save option values.
+    this.setCacheValue('use-cache', useCacheElt.checked);
+    this.setCacheValue('show-info-icons', showInfoIconsElt.checked);
+    this.setCacheValue('force-refresh', forceRefreshElt.checked);
+    this.setCacheValue('auto-update', autoUpdateElt.checked);
+    this.setCacheValue('ignore-articles', ignoreArticlesElt.checked);
+    this.setCacheValue('slow-sort-indicator', sortMarker);
+    this.setCacheValue('debug-mode', debugModeElt.checked);
+    this.setCacheValue('detail-page-url-' + Constants.QUEUE_DVD, this.trim(dvdDetailPageUrlElt.value));
+    this.setCacheValue('detail-page-url-' + Constants.QUEUE_INSTANT, this.trim(instantDetailPageUrlElt.value));
+
+    // Clear cache if no longer needed.
+    if (!useCacheElt.checked) {
+        this.doClearCache();
+    }
+
+    // Toggle movie info icons.
+    elts = document.getElementsByClassName('nqs-movie-info-icon');
+    if (showInfoIconsElt.checked) {
+        if (elts.length === 0) {
+            this.showCachedData();
+        } else {
+            for (ee = 0; ee < elts.length; ee += 1) {
+                elts[ee].style.display = 'block';
+            }
+        }
+    } else {
+        for (ee = 0; ee < elts.length; ee += 1) {
+            elts[ee].style.display = 'none';
+        }
+    }
+
+    // Toggle slow sort indicators.
+    elts = document.getElementsByClassName('slow-marker');
+    for (ee = 0; ee < elts.length; ee += 1) {
+        elts[ee].innerHTML = sortMarker ? ' ' + sortMarker : '';
+    }
+
+    // Apply debug mode.
+    this.isDebug = debugModeElt.checked;
+    for (ee = 0; ee < this.allNonQueueRetrievers.length; ee += 1) {
+        this.allNonQueueRetrievers[ee].isDebug = debugModeElt.checked;
+    }
+
+    // Back to sorter view.
+    this.doToggleConfig();
+};
+
+QueueManager.prototype.doResetConfig = function () {
+    var useCacheElt = document.getElementById('use-cache'),
+        showInfoIconsElt = document.getElementById('show-info-icons'),
+        forceRefreshElt = document.getElementById('force-refresh'),
+        autoUpdateElt = document.getElementById('auto-update'),
+        ignoreArticlesElt = document.getElementById('ignore-articles'),
+        slowSortIndicatorElt = document.getElementById('slow-sort-indicator'),
+        slowSortIndicatorTextElt = document.getElementById('slow-sort-indicator-text'),
+        debugModeElt = document.getElementById('debug-mode'),
+        dvdDetailPageUrlElt = document.getElementById('detail-page-url-' + Constants.QUEUE_DVD),
+        instantDetailPageUrlElt = document.getElementById('detail-page-url-' + Constants.QUEUE_INSTANT);
+
+    // Reset option values.
+    useCacheElt.checked = Constants.DEFAULTS['use-cache'];
+    showInfoIconsElt.checked = Constants.DEFAULTS['show-info-icons'];
+    forceRefreshElt.checked = Constants.DEFAULTS['force-refresh'];
+    autoUpdateElt.checked = Constants.DEFAULTS['auto-update'];
+    ignoreArticlesElt.checked = Constants.DEFAULTS['ignore-articles'];
+    slowSortIndicatorElt.checked = !!Constants.DEFAULTS['slow-sort-indicator'];
+    slowSortIndicatorTextElt.value = Constants.DEFAULTS['slow-sort-indicator'];
+    debugModeElt.checked = Constants.DEFAULTS['debug-mode'];
+    dvdDetailPageUrlElt.value = Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_DVD];
+    instantDetailPageUrlElt.value = Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_INSTANT];
+
+    // Trigger event handlers.
+    this.doUpdateUseCacheSubOptions();
+};
+
+QueueManager.prototype.doClearCache = function () {
+    // Give click-received indication.
+    document.getElementById('clear-cache').setAttribute('disabled', 'disabled');
+
+    this.deleteCacheValue('movie-data-' + Constants.QUEUE_DVD);
+    this.deleteCacheValue('movie-data-' + Constants.QUEUE_INSTANT);
+    this.cachedData = {};
+};
+
+QueueManager.prototype.doUpdateUseCacheSubOptions = function () {
+    var useCacheElt = document.getElementById('use-cache'),
+        showInfoIconsElt = document.getElementById('show-info-icons'),
+        forceRefreshElt = document.getElementById('force-refresh'),
+        clearCacheElt = document.getElementById('clear-cache');
+
+    if (useCacheElt.checked) {
+        showInfoIconsElt.removeAttribute('disabled');
+        forceRefreshElt.removeAttribute('disabled');
+        clearCacheElt.removeAttribute('disabled');
+    } else {
+        showInfoIconsElt.setAttribute('disabled', 'disabled');
+        forceRefreshElt.setAttribute('disabled', 'disabled');
+        clearCacheElt.setAttribute('disabled', 'disabled');
+    }
+};
+
+QueueManager.prototype.doUpdateSlowSortIndicatorOption = function () {
+    var slowSortIndicatorElt = document.getElementById('slow-sort-indicator'),
+        slowSortIndicatorTextElt = document.getElementById('slow-sort-indicator-text');
+
+    slowSortIndicatorElt.checked = this.trim(slowSortIndicatorTextElt.value);
+};
+
+QueueManager.prototype.doUpdateSlowSortIndicatorText = function () {
+    var slowSortIndicatorTextElt = document.getElementById('slow-sort-indicator-text');
+
+    slowSortIndicatorTextElt.value = '';
 };
 
 QueueManager.prototype.doCancelSort = function () {
@@ -2526,7 +2637,7 @@ QueueManager.prototype.doUndoSort = function () {
 
     this.switchToBusyMode();
 
-    origOrder = this.getCacheValue('undo-order-' + this.getQueueId());
+    origOrder = this.getCacheValue('undo-order-' + this.queueId);
 
     // In order to call this.commitSort, we need an array of objects each
     // containing a single "order" property representing the original order.
@@ -2598,7 +2709,7 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
             id: 'd10',
             text: 'Star Rating',
             title: 'Sort your queue by star rating from high to low',
-            queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
+            queues: [Constants.QUEUE_INSTANT, Constants.QUEUE_DVD],
             config: [{command: 'sort', fields: ['starRating', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC]}]
         },
         {
@@ -2606,7 +2717,7 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
             id: 'd20',
             text: 'Average Rating',
             title: 'Sort your queue by average rating from high to low',
-            queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
+            queues: [Constants.QUEUE_INSTANT, Constants.QUEUE_DVD],
             config: [{command: 'sort', fields: ['avgRating', 'starRating', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_DESC, QueueManager.SORT_ASC]}]
         },
         {
@@ -2614,35 +2725,35 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
             id: 'd30',
             text: 'Star/Avg Rating',
             title: 'Sort your queue by star rating (primary) and by average rating (secondary) from high to low',
-            queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
+            queues: [Constants.QUEUE_INSTANT, Constants.QUEUE_DVD],
             config: [{command: 'sort', fields: ['starRating', 'avgRating', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_DESC, QueueManager.SORT_ASC]}]
         },
         {
             id: 'd40',
             text: 'Shuffle',
             title: 'Shuffle your queue into a random order',
-            queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
+            queues: [Constants.QUEUE_INSTANT, Constants.QUEUE_DVD],
             config: [{command: 'shuffle'}]
         },
         {
             id: 'd50',
             text: 'Reverse',
             title: 'Reverse the current list order',
-            queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
+            queues: [Constants.QUEUE_INSTANT, Constants.QUEUE_DVD],
             config: [{command: 'reverse'}]
         },
         {
             id: 'd60',
             text: 'Title',
             title: 'Sort your queue alphabetically by movie title',
-            queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
+            queues: [Constants.QUEUE_INSTANT, Constants.QUEUE_DVD],
             config: [{command: 'sort', fields: ['title'], sortFns: ['defaultSortFn'], dirs: [QueueManager.SORT_ASC]}]
         },
         {
             id: 'd70',
             text: 'Instant \u2191',   // Use Unicode instead of HTML entity.
             title: 'Move instantly playable movies to the top of your queue',
-            queues: [QueueManager.QUEUE_DVD],
+            queues: [Constants.QUEUE_DVD],
             // Note: Chrome needs 'order' as secondary sort to keep current order.
             config: [{command: 'sort', fields: ['playability', 'order'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], defaultOrder: ['NOW', '{date}']}]
         },
@@ -2650,7 +2761,7 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
             id: 'd80',
             text: 'Instant \u2193',   // Use Unicode instead of HTML entity.
             title: 'Move instantly playable movies to the bottom of your queue',
-            queues: [QueueManager.QUEUE_DVD],
+            queues: [Constants.QUEUE_DVD],
             // Note: Chrome needs 'order' as secondary sort to keep current order.
             config: [{command: 'sort', fields: ['playability', 'order'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_ASC, QueueManager.SORT_ASC], defaultOrder: ['NOW', '{date}']}]
         },
@@ -2659,7 +2770,7 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
             id: 'd90',
             text: 'Genre',
             title: 'Sort your queue alphabetically by genre',
-            queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
+            queues: [Constants.QUEUE_INSTANT, Constants.QUEUE_DVD],
             config: [{command: 'sort', fields: ['genre', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_ASC, QueueManager.SORT_ASC]}]
         },
         {
@@ -2667,16 +2778,16 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
             id: 'd100',
             text: 'TV/Movies',
             title: 'Move the TV Shows genre above movie genres and sort by title',
-            queues: [QueueManager.QUEUE_DVD],
-            config: [{command: 'sort', fields: ['genre', 'title'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], cacheKey: 'sort-order-custom-genre-' + this.getQueueId(), defaultOrder: ['Television']}]
+            queues: [Constants.QUEUE_DVD],
+            config: [{command: 'sort', fields: ['genre', 'title'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], cacheKey: 'sort-order-custom-genre-' + this.queueId, defaultOrder: ['Television']}]
         },
         {
             // Add sort by title to make sure series discs are in asc order.
             id: 'd101',
             text: 'TV/Movies',
             title: 'Move the TV Shows genre above movie genres and sort by title',
-            queues: [QueueManager.QUEUE_INSTANT],
-            config: [{command: 'sort', fields: ['genre', 'title'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], cacheKey: 'sort-order-custom-genre-' + this.getQueueId(), defaultOrder: ['TV Shows']}]
+            queues: [Constants.QUEUE_INSTANT],
+            config: [{command: 'sort', fields: ['genre', 'title'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], cacheKey: 'sort-order-custom-genre-' + this.queueId, defaultOrder: ['TV Shows']}]
         },
         {
             // Asc direction for availability sort intuitively means longer
@@ -2684,16 +2795,16 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
             id: 'd110',
             text: 'Availability',
             title: 'Move the most desirable movies to the top of your queue',
-            queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
+            queues: [Constants.QUEUE_INSTANT, Constants.QUEUE_DVD],
             // Note: Chrome needs 'order' as secondary sort to keep current order.
-            config: [{command: 'sort', fields: ['availability', 'order'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], cacheKey: 'sort-order-availability-' + this.getQueueId(), defaultOrder: ['{date}', 'VERY LONG WAIT', 'LONG WAIT', 'SHORT WAIT', 'N/A']}]
+            config: [{command: 'sort', fields: ['availability', 'order'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], cacheKey: 'sort-order-availability-' + this.queueId, defaultOrder: ['{date}', 'VERY LONG WAIT', 'LONG WAIT', 'SHORT WAIT', 'N/A']}]
         },
         {
             // Add sort by title to make sure series discs are in asc order.
             id: 'd120',
             text: 'Length',
             title: 'Sort your queue by length from short to long',
-            queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
+            queues: [Constants.QUEUE_INSTANT, Constants.QUEUE_DVD],
             config: [{command: 'sort', fields: ['length', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_ASC, QueueManager.SORT_ASC]}]
         },
         {
@@ -2701,7 +2812,7 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
             id: 'd130',
             text: 'Year',
             title: 'Sort your queue by year from new to old',
-            queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
+            queues: [Constants.QUEUE_INSTANT, Constants.QUEUE_DVD],
             config: [{command: 'sort', fields: ['year', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC]}]
         },
         {
@@ -2709,32 +2820,32 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
             id: 'd140',
             text: 'Format',
             title: 'Move HD movies above standard-definition movies',
-            queues: [QueueManager.QUEUE_INSTANT],
+            queues: [Constants.QUEUE_INSTANT],
             // Note: Chrome needs 'order' as secondary sort to keep current order.
-            config: [{command: 'sort', fields: ['mediaFormat', 'order'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], cacheKey: 'sort-order-mediaformat-' + QueueManager.QUEUE_INSTANT, defaultOrder: ['HD', 'STREAMING']}]   // Favor HD over SD formats.
+            config: [{command: 'sort', fields: ['mediaFormat', 'order'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], cacheKey: 'sort-order-mediaformat-' + Constants.QUEUE_INSTANT, defaultOrder: ['HD', 'STREAMING']}]   // Favor HD over SD formats.
         },
         {
             // Format sort for DVD queue.
             id: 'd150',
             text: 'Format',
             title: 'Move high-definition movies above standard-definition movies',
-            queues: [QueueManager.QUEUE_DVD],
+            queues: [Constants.QUEUE_DVD],
             // Note: Chrome needs 'order' as secondary sort to keep current order.
-            config: [{command: 'sort', fields: ['mediaFormat', 'order'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], cacheKey: 'sort-order-mediaformat-' + QueueManager.QUEUE_DVD, defaultOrder: ['BLU-RAY', 'DVD']}]   // Favor HD over SD formats.
+            config: [{command: 'sort', fields: ['mediaFormat', 'order'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_ASC], cacheKey: 'sort-order-mediaformat-' + Constants.QUEUE_DVD, defaultOrder: ['BLU-RAY', 'DVD']}]   // Favor HD over SD formats.
         },
         {
             // Add sort by title to make sure series discs are in asc order.
             id: 'd160',
             text: 'Language',
             title: 'Sort your queue alphabetically by language',
-            queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
+            queues: [Constants.QUEUE_INSTANT, Constants.QUEUE_DVD],
             config: [{command: 'sort', fields: ['language', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_ASC, QueueManager.SORT_ASC]}]
         },
         {
             id: 'd170',
             text: 'Date Added',
             title: 'Sort your queue by the date movies were added to the queue',
-            queues: [QueueManager.QUEUE_DVD],
+            queues: [Constants.QUEUE_DVD],
             // Note: Chrome needs 'order' as secondary sort to keep current order.
             config: [{command: 'sort', fields: ['dateAdded', 'order'], sortFns: ['customOrderSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_ASC, QueueManager.SORT_ASC], defaultOrder: ['{date}']}]
         }
@@ -2744,7 +2855,7 @@ QueueManager.prototype.getDefaultButtonConfig = function () {
             id: 'd180',
             text: 'Reviews',
             title: 'Sort your queue by the number of member reviews',
-            queues: [QueueManager.QUEUE_INSTANT, QueueManager.QUEUE_DVD],
+            queues: [Constants.QUEUE_INSTANT, Constants.QUEUE_DVD],
             // Note: Chrome needs 'order' as secondary sort to keep current order.
             config: [{command: 'sort', fields: ['reviews', 'avgRating', 'title'], sortFns: ['defaultSortFn', 'defaultSortFn', 'defaultSortFn'], dirs: [QueueManager.SORT_DESC, QueueManager.SORT_DESC, QueueManager.SORT_ASC]}]
         }
@@ -2771,8 +2882,7 @@ QueueManager.prototype.loadButtonConfig = function () {
     // Get user-defined button visibility and/or ordering.
     // Note: invisible buttons have order -1; new buttons do not have an order
     // so they can be detected as new, and shown.
-    buttonOrder = this.getCacheValue('user-button-display-order-' +
-            this.getQueueId(), []);
+    buttonOrder = this.getCacheValue('user-button-display-order-' + this.queueId, []);
 
     function assertCorrectButtonConfig(config) {
         for (ii = 0; ii < config.length; ii += 1) {
@@ -2841,10 +2951,25 @@ QueueManager.prototype.getUiCssTemplate = function () {
     });
 
     return css +
+        // Manage views.
+        '#netflix-queue-sorter legend.config {' +
+            'display: none;' +
+        '}' +
+        '#netflix-queue-sorter[data-view="config"] legend,' +
+        '#netflix-queue-sorter[data-view="config"] #nqs-controls,' +
+        '#netflix-queue-sorter[data-view="config"] #nqs-buttons {' +
+            'display: none;' +
+        '}' +
+        '#netflix-queue-sorter[data-view="config"] legend.config,' +
+        '#netflix-queue-sorter[data-view="config"] #nqs-config {' +
+            'display: block;' +
+        '}' +
+
         // Controls go on the left.
         '#netflix-queue-sorter #nqs-controls {' +
             'float: left;' +
         '}' +
+
         '#netflix-queue-sorter .nqs-icon-link {' +
             'width: 32px;' +
             'height: 32px;' +
@@ -2867,7 +2992,6 @@ QueueManager.prototype.getUiCssTemplate = function () {
         '}' +
         // Config button is shown by default.
         '#netflix-queue-sorter .nqs-icon-link#nqs-icon-configure {' +
-            'display: none;' +   // TODO: NOW: show when config UI is done.
             'background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAFBElEQVRYw7VXXWhcRRSevdlks8lmN7sbaIzpRgJSWxGrWASLUijogy+iCK1oVay1D1YM+OCL9kf0SUEK0lZfNFGKQgMaMSFCZANKqKAVWiQ+ZdP8bjab7E+y2d38+H2XOet43STddB34mLkz557zzTnnzpzrGh8fV2ZzuVwqm81amUzmvo2NjUNAeG1t7WqhUBhGn8azIqrVXCRAo2xUjLGVTqffXlxcfH99fd2etyxL1dbWjheLxQ+WlpYuqSo2VywWU4lEQoVCIRqxJ2dmZoIgcBZkTgkxoqGhgf27IPGekK4KgbGxMdsL7e3tqr6+Xk1PTysQ4PorMHgefQMJ0CMgkVtZWdmD8c0dGYQdQYkAw4Bdqbq6OtXR0aEQApVMJm0BGDoI431AkCRqamo4fXh1dXVoO0OmQdkAcknl83m1vLxs9zYBAruyBWiARORZG/1JJ6QoPoi1X8oZ1KQVEtYGDdIYN8iezyBfSmQS2DU7O3sSLj+HyQ15MRAIqKamJns8Pz//K/qH9EtxYC/GSTM/kKC2YtkhIc9cE72m+20C0Wj0buzwL7fb3YdP72UIz1MhjXd2dlLRE6Ojo99jV26+ALk/IHMAyovcKY0IxIhzbK7/J1SDg4MPw+AIvwAk2J84A57P5XK/MeMjkcj9SMg+eGc3WdOgx+NRXq93aGFh4SXs7ibJmgZNo7dK4B4ouQHlFr/3xsbGDJ6/wtiDPHgWhHySRJJI8ILy+/0xeOxFrEfNmFdMYGBggB//z1B+QAwwEUWZGWeTBFtzc3MeXuiCNy6YJCoi0N/fT6UMww9AyGlsM9AgAU+Q8MW5ubk3YSRv5kUlBKhsL/AOxk8CfiABRIEfgTeAfU4C7KmU+eLz+Ybj8fhRhG1KSFRKQHAnnluASawnKIQXI5i/jLlHTOMCKucJGgwGb8ATR5AX1yUkOyGgnDeejq0Xa+eB4+XCQRnmTktLywKS81WcHVeEXLUICBiODyFX6wyH9CBBubO41M6YoagWAeIw5D6HTLvTuHgDXwhz48rk5OQJnCtJma8WAeIu4AvIP1bOE9wxkxPeuI7D7IVUKnWt7KWFc6CUzRUSoBEP+o/xzslyoSAJ5kVbW1sKp+lr+Eq+1rfpPwR6e3vt20+OWicBIbcJAenP6U/4XyRM4Fjnbfg68uITnril67q7u9t+4F1AdubdLcrkBtuMgL4Jj0D+IuQDzvdlDE/QzoWJiYkuzOdtvT09PaWdblVYyNj8vk0imsR+rH8J3FuueKUsSz9gGCSO4aaNlQhU2mTn5n2vSYRA4FOIPON8B4S+g3wWx/dz8MYEkvOpHRMwieAzs8Eqis9652eA00aVFIX7D7W2tlrYfRzjMG7ej26bgIRIiLCeZK/X6IXPgCAKnMvAWyh8T4+MjJzQefX4bRMwG7ObOcLaj1U1yzI8P4Clb8Ph8G6cC9mpqSkfZWC8B546VlUCJhGGgQToERSkHYg9DT3KNbQh9E8jDKn/hYDzH4DJiQvKApEuTOdR1l1CIhbt80cTIK06wKNRr+caAVZMzCoGu0mvb9XyQMZ4pwgSS0BB1xgF7N7NApxVOAncAaGjwH5gFxAA/CyAtUG3ocyrCW3VikDOJABkdZ8G+Ms1DfwOfEMCNPIgEAFCLPUAH3/HNBFRFNCe2e7XmLIrQMqQXdSeyep5FjpjwLXtcsAylHLnNbd6POgdC4H1zQT/Br+QLX7mZr6IAAAAAElFTkSuQmCC");' +
         '}' +
         '#netflix-queue-sorter .nqs-icon-link#nqs-icon-undo {' +
@@ -2920,6 +3044,33 @@ QueueManager.prototype.getUiCssTemplate = function () {
             'display: none;' +   // Hidden initially.
             'color: #333333;' +   // Netflix black.
         '}' +
+        '#nqs-config label {' +
+            'display: block;' +
+            'margin-bottom: 0.5em;' +
+        '}' +
+        '#nqs-config input {' +
+            'float: none;' +
+        '}' +
+        '#nqs-config .new-section {' +
+            'margin-top: 1.5em;' +
+        '}' +
+        '#nqs-config .sub-option {' +
+            'margin-left: 2em;' +
+        '}' +
+        '#nqs-config #slow-sort-indicator-text {' +
+            // TODO: do this in a better way; this one does not hold up when zooming in.
+            'position: relative;' +
+            'top: -1.75em;' +
+            'left: 20em;' +
+        '}' +
+        '#nqs-config #save-config,' +
+        '#nqs-config #cancel-config {' +
+            'margin: 1em 1em 0 0;' +
+        '}' +
+        '#nqs-config .factory-reset {' +
+            'float: right;' +
+            'margin: 1em 0 0 0;' +
+        '}' +
 
         // Movie info icon, outside of #netflix-queue-sorter.
         '.nqs-movie-info-icon {' +
@@ -2936,16 +3087,27 @@ QueueManager.prototype.getUiCssTemplate = function () {
 QueueManager.prototype.getUiUnsupportedCssTemplate = function () {
     var css = this.getUiContainerCssTemplate();
 
-    // Add extra style.
+    // Add extra style.   // TODO: use CSS class
     return this.substituteVars(css, {
         extraContainerStyle: 'text-align: center;'
     });
 };
 
 QueueManager.prototype.getUiHtmlTemplate = function () {
+    var useCache = this.getCacheValue('use-cache', Constants.DEFAULTS['use-cache']),
+        showInfoIcons = this.getCacheValue('show-info-icons', Constants.DEFAULTS['show-info-icons']),
+        forceRefresh = this.getCacheValue('force-refresh', Constants.DEFAULTS['force-refresh']),
+        autoUpdate = this.getCacheValue('auto-update', Constants.DEFAULTS['auto-update']),
+        ignoreArticles = this.getCacheValue('ignore-articles', Constants.DEFAULTS['ignore-articles']),
+        slowSortIndicator = this.getCacheValue('slow-sort-indicator', Constants.DEFAULTS['slow-sort-indicator']),
+        debugMode = this.getCacheValue('debug-mode', Constants.DEFAULTS['debug-mode']),
+        dvdDetailPageUrl = this.getCacheValue('detail-page-url-' + Constants.QUEUE_DVD, Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_DVD]),
+        instantDetailPageUrl = this.getCacheValue('detail-page-url-' + Constants.QUEUE_INSTANT, Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_INSTANT]);
+
     return '' +
-        '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.93</legend>' +
+        '<fieldset id="netflix-queue-sorter" data-view="sorter">' +
+            '<legend align="center">Netflix Queue Sorter</legend>' +
+            '<legend class="config" align="center">Configure Netflix Queue Sorter v2.94</legend>' +
             '<div id="nqs-controls">' +
                 // JSLint does not like these javascript hrefs (true, they do
                 // not follow the semantic layered markup rules), but at least
@@ -2968,48 +3130,59 @@ QueueManager.prototype.getUiHtmlTemplate = function () {
                 '</div>' +
             '</div>' +
             '<div id="nqs-config">' +   // TODO: NOW: should be <form>?
-// TODO: NOW: hook these options up throughout the code.
-                '<p>' +
-                    '<input type="checkbox" id="auto-update">' +
-                    '<label for="auto-update" title="If unchecked, you will need to press the Update Queue button yourself">Automatically update queue after sort</label>' +
-                '</p>' +
-                '<p>' +
-                    '<input type="checkbox" id="use-cache">' +
-                    '<label for="use-cache" title="If unchecked, will slow down sort performance but will avoid stale data and save browser memory">Store retrieved movie info</label>' +
-                '</p>' +
-                '<p>' +
-                    '<input type="checkbox" id="ignore-articles">' +
-                    '<label for="ignore-articles" title="If unchecked, title sort will not follow Netflix\'s title sort behavior">Ignore articles for title sort</label>' +
-                '</p>' +
-// TODO: NOW: force refresh == !use cache?
-// TODO: FUTURE: if use-cache is on, show "force refresh" checkbox in UI.
-                '<p>' +
-                    '<input type="checkbox" id="force-refresh">' +
-                    '<label for="force-refresh" title="If unchecked, TODO: NOW">Always reload previously retrieved data to ensure accuracy</label>' +
-                '</p>' +
-                '<p>' +
-                    '<input type="checkbox" id="show-movie-info-icons">' +
-                    '<label for="show-movie-info-icons" title="If unchecked, retrieved movie info will not be visible, but will make loading the queue page faster">Show movie info icons</label>' +
-                '</p>' +
 
-    // TODO: NOW: add options for custom sort orders for those buttons that
-    //       use them.
+// TODO: FUTURE: add option for preferred format (HD, DVD, Blue-ray) for
+//       DVD queue as details page could have different values for each
+//       format (e.g. length).
 
-    // TODO: NOW: add options to managing button display order and visibility
+// TODO: NOW: add options for custom sort orders for those buttons that use them.
 
-                '<p>' +
-                    '<input type="checkbox" id="debug-mode">' +
-                    '<label for="debug-mode" title="See http://wiki.greasespot.net/GM_log for how to make debug messages appear">Debug mode</label>' +
-                '</p>' +
-// TODO: FUTURE: allow custom slowness indicator?
-                '<p>' +
-                    'Sort button slowness indicator: <input type="text" id="slowness-indicator" size="5">' +
-                '</p>' +
-                '<p>' +
-                    '<button>Clear stored movie info</button>' +
-                    // TODO: FUTURE: allow clearing of specific cached items
-                '</p>' +
-                '<button>Save</button><button>Cancel</button>' +
+// TODO: NOW: add options to managing button display order and visibility
+
+                '<label for="use-cache" title="If unchecked, out-of-date movie data will be avoided, browser memory consumption will decrease and sorting speed may decrease, but no info icons will be shown">' +
+                    '<input type="checkbox" id="use-cache"' + (useCache ? ' checked="checked"' : '') + '>' +
+                    'Remember retrieved movie info' +
+                '</label>' +
+                '<label for="show-info-icons" class="sub-option" title="If unchecked, info icons will not be shown">' +
+                    '<input type="checkbox" id="show-info-icons"' + (showInfoIcons ? ' checked="checked"' : '') + (!useCache ? ' disabled="disabled"' : '') + '>' +
+                    'Show movie info icons' +
+                '</label>' +
+                '<label for="force-refresh" class="sub-option" title="If checked, sorts will always re-fetch the latest movie data, so sorting speed may decrease">' +
+                    '<input type="checkbox" id="force-refresh"' + (forceRefresh ? ' checked="checked"' : '') + (!useCache ? ' disabled="disabled"' : '') + '>' +
+                    'Always reload previously retrieved data to ensure accuracy' +
+                '</label>' +
+                // TODO: FUTURE: allow clearing of specific cached items
+                '<p class="sub-option"><button id="clear-cache"' + (!useCache ? ' disabled="disabled"' : '') + ' title="Click this button to re-fetch the latest movie data next time you do a sort">Clear Movie Info</button></p>' +
+                '<label for="auto-update" class="new-section" title="If unchecked, allows you to preview the new sort order but requires you to click the Update Queue button yourself">' +
+                    '<input type="checkbox" id="auto-update"' + (autoUpdate ? ' checked="checked"' : '') + ' >' +
+                    'Automatically update queue after sort' +
+                '</label>' +
+                '<label for="ignore-articles" title="If unchecked, title sort will not follow Netflix\'s standard sorting behavior">' +
+                    '<input type="checkbox" id="ignore-articles"' + (ignoreArticles ? ' checked="checked"' : '') + '>' +
+                    'Ignore articles (a, an, the, etc) for title sort' +
+                '</label>' +
+                // TODO: FUTURE: allow custom slowness indicator?
+                '<label for="slow-sort-indicator" title="If checked, sorts that are potentially slow are marked with the given indicator">' +
+                    '<input type="checkbox" id="slow-sort-indicator"' + (slowSortIndicator ? ' checked="checked"' : '') + '>' +
+                    'Use sort button slowness indicator:' +
+                '</label>' +
+                // Must be outside the label otherwise clicking in the field toggles the checkbox.
+                '<input type="text" id="slow-sort-indicator-text" size="5"' + (slowSortIndicator ? ' value="' + slowSortIndicator + '"' : '') + '>' +
+                '<label for="debug-mode" title="If checked, displays debug messages in the developer\'s console">' +
+                    '<input type="checkbox" id="debug-mode"' + (debugMode ? ' checked="checked"' : '') + '>' +
+                    'Enable <a href="http://wiki.greasespot.net/GM_log" target="_new">debug mode</a>' +
+                '</label>' +
+                '<label for="detail-page-url-' + Constants.QUEUE_DVD + '" class="new-section" title="URL used to fetch movie details not present in the queue itself.  Use {hostName} as a placeholder for the queue page host name and {movieId} as a placeholder for the movie ID">' +
+                    'DVD Queue movie details page template:' +
+                    '<input type="text" id="detail-page-url-' + Constants.QUEUE_DVD + '" size="40" value="' + dvdDetailPageUrl + '">' +
+                '</label>' +
+                '<label for="detail-page-url-' + Constants.QUEUE_INSTANT + '" title="URL used to fetch movie details not present in the queue itself.  Use {hostName} as a placeholder for the queue page host name and {movieId} as a placeholder for the movie ID">' +
+                    'Instant Queue movie details page template:' +
+                    '<input type="text" id="detail-page-url-' + Constants.QUEUE_INSTANT + '" size="40" value="' + instantDetailPageUrl + '">' +
+                '</label>' +
+                '<p class="factory-reset">Reset all options to their factory default value: <button id="reset-config" title="Click this button to clear any customizations you may have made">Reset</button></p>' +
+                '<button id="save-config">Save</button>' +
+                '<button id="cancel-config">Cancel</button>' +
             '</div>' +
         '</fieldset>';
 };
@@ -3018,14 +3191,14 @@ QueueManager.prototype.getUiUnsupportedHtmlTemplate = function () {
     // TODO: FUTURE: add IE here once it's supported.
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.93</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.94</legend>' +
             'Your browser is not supported.  Please use the latest ' +
             'version of Chrome, Firefox, Opera or Safari.' +
         '</fieldset>';
 };
 
 QueueManager.prototype.getButtonHtmlTemplate = function () {
-    return '<button title="{title}" nqs-config="{config}">{text}</button>';
+    return '<button title="{title}" nqs-config="{config}">{text}{marker}</button>';
 };
 
 QueueManager.prototype.getMovieInfoHtmlTemplate = function () {
@@ -3048,8 +3221,7 @@ QueueManager.prototype.htmlEntityEncode = function (str) {
 
 QueueManager.prototype.getUpdateButtonText = function () {
     // Movies.n.c uses value, but www.n.c uses alt.
-    return this.updateQueueButton.value ? this.updateQueueButton.value :
-            this.updateQueueButton.getAttribute('alt');
+    return this.updateQueueButton.value || this.updateQueueButton.getAttribute('alt');
 };
 
 QueueManager.prototype.couldBeSlow = function (config) {
@@ -3060,8 +3232,7 @@ QueueManager.prototype.couldBeSlow = function (config) {
     for (ii = 0; ii < config.length; ii += 1) {
         if (undefined !== config[ii].fields) {
             for (jj = 0; jj < config[ii].fields.length; jj += 1) {
-                if (undefined === this.allDataPointConfig[
-                        config[ii].fields[jj]]) {
+                if (undefined === this.allDataPointConfig[config[ii].fields[jj]]) {
                     // Not a queue field.
                     result = true;
                     break;
@@ -3073,7 +3244,7 @@ QueueManager.prototype.couldBeSlow = function (config) {
     return result;
 };
 
-QueueManager.prototype.showUi = function (icons) {
+QueueManager.prototype.showUi = function () {
     var cssTemplate,
         htmlTemplate,
         buttonTemplate,
@@ -3083,15 +3254,23 @@ QueueManager.prototype.showUi = function (icons) {
         queueForm,
         targetContainer,
         myContainer,
-        queueId = this.getQueueId(),
+        queueId = this.queueId,
         buttonsHtml,
         elts,
         cancelEventHandler,
-        configEventHandler,
+        toggleConfigEventHandler,
+        cancelConfigEventHandler,
+        saveConfigEventHandler,
+        resetConfigEventHandler,
+        clearCacheEventHandler,
         undoEventHandler,
         sortButtonEventHandler,
+        updateUseCacheSubOptionsEventHandler,
+        updateSlowSortIndicatorOptionEventHandler,
+        updateSlowSortIndicatorTextEventHandler,
         rowFilterInputEventHandler,
         couldBeSlow,
+        couldBeSlowMarker = this.getCacheValue('slow-sort-indicator', Constants.DEFAULTS['slow-sort-indicator']),
         self = this,
         ee,
         id,
@@ -3122,15 +3301,12 @@ QueueManager.prototype.showUi = function (icons) {
             // Only add button if it's defined for the current queue.
             for (jj = 0; jj < config[ii].queues.length; jj += 1) {
                 if (queueId === config[ii].queues[jj]) {
-                    // Adding marker to slow sorts is confusing; don't do it.
-                    //couldBeSlow = this.couldBeSlow(config[ii].config);
+                    couldBeSlow = this.couldBeSlow(config[ii].config);
                     buttonsHtml += this.substituteVars(buttonTemplate, {
-                        config: this.htmlEntityEncode(
-                                JSON.stringify(config[ii].config)),
+                        config: this.htmlEntityEncode(JSON.stringify(config[ii].config)),
                         title: config[ii].title,
-                        text: //couldBeSlow ? config[ii].text + ' *' : 
-                                config[ii].text
-
+                        text: config[ii].text,
+                        marker: couldBeSlow ? '<span class="slow-marker">' + (couldBeSlowMarker ? ' ' + couldBeSlowMarker : '') + '</span>' : ''
                     });
                     break;
                 }
@@ -3176,12 +3352,43 @@ QueueManager.prototype.showUi = function (icons) {
     cancelEventHandler = function (event) {
         self.doCancelSort.call(self, event);
     };
-    configEventHandler = function (event) {
-        self.doConfigure.call(self, event);
+    toggleConfigEventHandler = function (event) {
+        event.preventDefault();   // Prevent auto-submit of the Netflix form.
+        self.doToggleConfig.call(self, event);
+    };
+    cancelConfigEventHandler = function (event) {
+        event.preventDefault();   // Prevent auto-submit of the Netflix form.
+        self.doCancelConfig.call(self, event);
+    };
+    saveConfigEventHandler = function (event) {
+        event.preventDefault();   // Prevent auto-submit of the Netflix form.
+        self.doSaveConfig.call(self, event);
+    };
+    resetConfigEventHandler = function (event) {
+        event.preventDefault();   // Prevent auto-submit of the Netflix form.
+        self.doResetConfig.call(self, event);
+    };
+    clearCacheEventHandler = function (event) {
+        event.preventDefault();   // Prevent auto-submit of the Netflix form.
+        self.doClearCache.call(self, event);
     };
     undoEventHandler = function (event) {
         self.doUndoSort.call(self, event);
     };
+    sortButtonEventHandler = function (event) {
+        event.preventDefault();   // Prevent auto-submit of the Netflix form.
+        self.prepSort.call(self, event);
+    };
+    updateUseCacheSubOptionsEventHandler = function (event) {
+        self.doUpdateUseCacheSubOptions.call(self, event);
+    };
+    updateSlowSortIndicatorOptionEventHandler = function (event) {
+        self.doUpdateSlowSortIndicatorOption.call(self, event);
+    };
+    updateSlowSortIndicatorTextEventHandler = function (event) {
+        self.doUpdateSlowSortIndicatorText.call(self, event);
+    };
+
     elts = myContainer.getElementsByClassName('nqs-icon-link');
     for (ee = 0; ee < elts.length; ee += 1) {
         id = elts[ee].getAttribute('id');
@@ -3195,7 +3402,7 @@ QueueManager.prototype.showUi = function (icons) {
             break;
         case 'nqs-icon-configure':
             //elts[ee].onclick = configEventHandler;
-            this.customAddEventListener(elts[ee], 'click', configEventHandler);
+            this.customAddEventListener(elts[ee], 'click', toggleConfigEventHandler);
             break;
         case 'nqs-icon-update':
             // Already hooked up nqs-icon-update.
@@ -3209,31 +3416,51 @@ QueueManager.prototype.showUi = function (icons) {
         }
     }
 
-    sortButtonEventHandler = function (event) {
-        event.preventDefault();   // Prevent auto-submit of the Netflix form.
-        self.prepSort.call(self, event);
-    };
+    // Sort and config buttons.
     elts = myContainer.getElementsByTagName('button');
     for (ee = 0; ee < elts.length; ee += 1) {
-        //elts[ee].onclick = sortButtonEventHandler;
-        this.customAddEventListener(elts[ee], 'click', sortButtonEventHandler);
+        switch (elts[ee].getAttribute('id')) {
+        case 'save-config':
+            //elts[ee].onclick = saveConfigEventHandler;
+            this.customAddEventListener(elts[ee], 'click', saveConfigEventHandler);
+            break;
+        case 'reset-config':
+            //elts[ee].onclick = resetConfigEventHandler;
+            this.customAddEventListener(elts[ee], 'click', resetConfigEventHandler);
+            break;
+        case 'cancel-config':
+            //elts[ee].onclick = cancelConfigEventHandler;
+            this.customAddEventListener(elts[ee], 'click', cancelConfigEventHandler);
+            break;
+        case 'clear-cache':
+            //elts[ee].onclick = clearCacheEventHandler;
+            this.customAddEventListener(elts[ee], 'click', clearCacheEventHandler);
+            break;
+        default:
+            //elts[ee].onclick = sortButtonEventHandler;
+            this.customAddEventListener(elts[ee], 'click', sortButtonEventHandler);
+        }
     }
 
-    // Set previously saved min/max values, if any.
-    this.minSelectedRowIndex(this.getCacheValue('last-min-row-' +
-                this.getQueueId()));
-    this.maxSelectedRowIndex(this.getCacheValue('last-max-row-' +
-                this.getQueueId()));
+    // Use Cache config option.
+    this.customAddEventListener(document.getElementById('use-cache'), 'click', updateUseCacheSubOptionsEventHandler);
 
-    rowFilterInputEventHandler = function (evt) {
+    // Slow Sort Indicator option.
+    this.customAddEventListener(document.getElementById('slow-sort-indicator'), 'change', updateSlowSortIndicatorTextEventHandler);
+    this.customAddEventListener(document.getElementById('slow-sort-indicator-text'), 'change', updateSlowSortIndicatorOptionEventHandler);
+
+    // Set previously saved min/max values, if any.
+    this.minSelectedRowIndex(this.getCacheValue('last-min-row-' + this.queueId));
+    this.maxSelectedRowIndex(this.getCacheValue('last-max-row-' + this.queueId));
+
+    rowFilterInputEventHandler = function () {
         self.applyToSelectedRowsOnly(true);
     };
     elts = myContainer.getElementsByTagName('input');
     for (ee = 0; ee < elts.length; ee += 1) {
         if ('text' === elts[ee].getAttribute('type')) {
             //elts[ee].onchange = rowFilterInputEventHandler;
-            this.customAddEventListener(elts[ee], 'change',
-                    rowFilterInputEventHandler);
+            this.customAddEventListener(elts[ee], 'change', rowFilterInputEventHandler);
         }
     }
 
@@ -3241,7 +3468,7 @@ QueueManager.prototype.showUi = function (icons) {
     this.statusElt = document.getElementById('nqs-status');
 };
 
-QueueManager.prototype.showCachedData = function (icons) {
+QueueManager.prototype.showCachedData = function () {
     var key,
         rr,
         ee,
@@ -3264,11 +3491,8 @@ QueueManager.prototype.showCachedData = function (icons) {
     // performs a sort.
 
     // Get movie data for this queue.  (Keep dvd and instant data separate.)
-    key = 'movie-data-' + this.getQueueId();
-    this.cachedData = this.getCacheValue(key);
-    if (!this.cachedData) {
-        this.cachedData = {};
-    }
+    key = 'movie-data-' + this.queueId;
+    this.cachedData = this.getCacheValue(key, {});
 
     // Allow each retriever to massage the data before it is displayed (e.g.
     // to clear an upcoming release date if that data already passed.)
@@ -3368,7 +3592,7 @@ QueueManager.prototype.checkForUndo = function () {
         undoElt,
         trElts,
         rr,
-        origOrder = this.getCacheValue('undo-order-' + this.getQueueId());
+        origOrder = this.getCacheValue('undo-order-' + this.queueId);
 
     if (origOrder) {
         // Undo is possible only if all movies in the queue are present in the
@@ -3396,7 +3620,7 @@ QueueManager.prototype.getQueueId = function () {
         id,
         tabs;
 
-   tabs = document.getElementById('qtabs');
+    tabs = document.getElementById('qtabs');
     if (tabs) {
         tabs = tabs.getElementsByTagName('li');
         for (tt = 0; tt < tabs.length; tt += 1) {
@@ -3405,11 +3629,11 @@ QueueManager.prototype.getQueueId = function () {
                     (this.hasClass(tabs[tt], 'queueTab') ||
                             this.hasClass(tabs[tt], 'tab'))) {
                 // Movies.n.c has instant, but www.n.c has inst.
-                if (this.hasClass(tabs[tt], QueueManager.QUEUE_INSTANT) ||
+                if (this.hasClass(tabs[tt], Constants.QUEUE_INSTANT) ||
                         this.hasClass(tabs[tt], 'inst')) {
-                    id = QueueManager.QUEUE_INSTANT;
-                } else if (this.hasClass(tabs[tt], QueueManager.QUEUE_DVD)) {
-                    id = QueueManager.QUEUE_DVD;
+                    id = Constants.QUEUE_INSTANT;
+                } else if (this.hasClass(tabs[tt], Constants.QUEUE_DVD)) {
+                    id = Constants.QUEUE_DVD;
                 } else {
                     // The Netflix source code might have changed.
                     throw new Error('Unknown queue type');
@@ -3423,7 +3647,7 @@ QueueManager.prototype.getQueueId = function () {
         // TODO: NOW: how to get current user's profile ID?
         // TODO: NOW: and even if we get it, button config is all based on
         //            dvd... for now, use 'dvd' and avoid updating cache.
-        id = 'dvd';
+        id = Constants.QUEUE_DVD;
 
         // Per TODOs above, avoid updating cache.
         this.disableCache = true;
@@ -3494,11 +3718,9 @@ QueueManager.prototype.assertUniqueDataPoints = function () {
 };
 
 QueueManager.prototype.checkForUpdates = function () {
-    var self = this;
-
     function versionCheckHandler(response) {
         var upgradeElt,
-            currentVersion = "2.93",   // Must be String for split usage below.
+            currentVersion = "2.94",   // Must be String for split usage below.
             latestVersion,
             result = /@version\s+([\d\.]+)/.exec(response.responseText);
 
@@ -3589,10 +3811,12 @@ QueueManager.prototype.init = function () {
         }
     }
 
-    if (this.isDebug) {
-        this.debug('init: showCachedData');
+    if (this.getCacheValue('show-info-icons', Constants.DEFAULTS['show-info-icons'])) {
+        if (this.isDebug) {
+            this.debug('init: showCachedData');
+        }
+        this.showCachedData();
     }
-    this.showCachedData();
 
     if (this.isDebug) {
         this.debug('init: checkForUpdates');
@@ -3612,4 +3836,3 @@ var manager = new QueueManager();
 manager.init();
 
 ///////////////////////////////////////////////////////////////////////////////
-
