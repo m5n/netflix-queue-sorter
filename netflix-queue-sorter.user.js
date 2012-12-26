@@ -3,31 +3,25 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 2.94 2012-07-27
+// Version 2.95 2012-12-26
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
 //
 // ==UserScript==
 // @name        Netflix Queue Sorter
-// @namespace   http://userscripts.org/users/64961
+// @version     2.95
 // @author      Maarten
-// @version     2.94
-// @description v2.94: Fully configurable multi-column sorter for your Netflix queue. Includes shuffle, reverse, sort by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
-// @include     http://movies.netflix.com/Queue*
-// @include     http://dvd.netflix.com/Queue*
-// @include     http://www.netflix.com/Queue*
-// @include     http://movies.netflix.ca/Queue*
-// @include     http://www.netflix.ca/Queue*
-// @include     http://ca.movies.netflix.com/Queue*
-// @include     http://ca.netflix.com/Queue*
-// Google Chrome uses @match instead of @include.
-// @match       http://movies.netflix.ca/Queue*
-// @match       http://www.netflix.ca/Queue*
-// @match       http://movies.netflix.com/Queue*
-// @match       http://dvd.netflix.com/Queue*
-// @match       http://www.netflix.com/Queue*
-// @match       http://ca.movies.netflix.com/Queue*
-// @match       http://ca.netflix.com/Queue*
+// @namespace   https://userscripts.org/users/64961
+// @updateURL   https://userscripts.org/scripts/source/35183.meta.js
+// @downloadURL https://userscripts.org/scripts/source/35183.user.js
+// @description v2.95 for Chrome, Firefox, Opera, Safari: shuffle, reverse, and sort your DVD Queue or Instant Queue by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
+// @match       *://movies.netflix.ca/Queue*
+// @match       *://www.netflix.ca/Queue*
+// @match       *://movies.netflix.com/Queue*
+// @match       *://dvd.netflix.com/Queue*
+// @match       *://www.netflix.com/Queue*
+// @match       *://ca.movies.netflix.com/Queue*
+// @match       *://ca.netflix.com/Queue*
 // ==/UserScript==
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -75,10 +69,11 @@ Constants.DEFAULTS = {
     'auto-update': true,
     'ignore-articles': true,
     'slow-sort-indicator': '',
-    'debug-mode': false
+    'debug-mode': false,
+    'user-button-config': []
 };
-Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_DVD] = 'http://{hostName}/Movie/{movieId}';
-Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_INSTANT] = 'http://{hostName}/movie/{movieId}?fdvd=true';
+Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_DVD] = window.location.protocol + '//{hostName}/Movie/{movieId}';
+Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_INSTANT] = window.location.protocol + '//{hostName}/movie/{movieId}?fdvd=true';
 
 
 
@@ -2454,7 +2449,9 @@ QueueManager.prototype.doCancelConfig = function () {
         slowSortIndicatorTextElt = document.getElementById('slow-sort-indicator-text'),
         debugModeElt = document.getElementById('debug-mode'),
         dvdDetailPageUrlElt = document.getElementById('detail-page-url-' + Constants.QUEUE_DVD),
-        instantDetailPageUrlElt = document.getElementById('detail-page-url-' + Constants.QUEUE_INSTANT);
+        instantDetailPageUrlElt = document.getElementById('detail-page-url-' + Constants.QUEUE_INSTANT),
+        userButtonConfigElt = document.getElementById('user-button-config'),
+        userButtonConfigValue;
 
     // Restore option values.
     useCacheElt.checked = this.getCacheValue('use-cache', Constants.DEFAULTS['use-cache']);
@@ -2467,6 +2464,11 @@ QueueManager.prototype.doCancelConfig = function () {
     debugModeElt.checked = this.getCacheValue('debug-mode', Constants.DEFAULTS['debug-mode']);
     dvdDetailPageUrlElt.value = this.getCacheValue('detail-page-url-' + Constants.QUEUE_DVD, Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_DVD]);
     instantDetailPageUrlElt.value = this.getCacheValue('detail-page-url-' + Constants.QUEUE_INSTANT, Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_INSTANT]);
+    userButtonConfigValue = this.getCacheValue('user-button-config', Constants.DEFAULTS['user-button-config']);
+    if (!userButtonConfigValue || 0 === userButtonConfigValue.length) {
+        userButtonConfigValue = this.getDefaultButtonConfig();
+    }
+    userButtonConfigElt.value = JSON.stringify(userButtonConfigValue);
 
     // Trigger event handlers.
     this.doUpdateUseCacheSubOptions();
@@ -2485,9 +2487,24 @@ QueueManager.prototype.doSaveConfig = function () {
         debugModeElt = document.getElementById('debug-mode'),
         dvdDetailPageUrlElt = document.getElementById('detail-page-url-' + Constants.QUEUE_DVD),
         instantDetailPageUrlElt = document.getElementById('detail-page-url-' + Constants.QUEUE_INSTANT),
+        userButtonConfigElt = document.getElementById('user-button-config'),
+        userButtonConfigValue,
+        userButtonConfigValueChanged,
         elts,
         ee,
         sortMarker = this.trim(slowSortIndicatorTextElt.value);
+
+    // Validate inputs.
+    try {
+        userButtonConfigValue = JSON.parse(userButtonConfigElt.value);
+    } catch (e) {
+        alert('Invalid button configuration, please verify the JSON structure.');
+        return;
+    }
+    if (JSON.stringify(userButtonConfigValue) === JSON.stringify(this.getDefaultButtonConfig())) {
+        userButtonConfigValue = Constants.DEFAULTS['user-button-config'];
+    }
+    userButtonConfigValueChanged = JSON.stringify(userButtonConfigValue) !== JSON.stringify(this.getCacheValue('user-button-config', Constants.DEFAULTS['user-button-config']));
 
     // Save option values.
     this.setCacheValue('use-cache', useCacheElt.checked);
@@ -2499,6 +2516,7 @@ QueueManager.prototype.doSaveConfig = function () {
     this.setCacheValue('debug-mode', debugModeElt.checked);
     this.setCacheValue('detail-page-url-' + Constants.QUEUE_DVD, this.trim(dvdDetailPageUrlElt.value));
     this.setCacheValue('detail-page-url-' + Constants.QUEUE_INSTANT, this.trim(instantDetailPageUrlElt.value));
+    this.setCacheValue('user-button-config', userButtonConfigValue);
 
     // Clear cache if no longer needed.
     if (!useCacheElt.checked) {
@@ -2535,6 +2553,11 @@ QueueManager.prototype.doSaveConfig = function () {
 
     // Back to sorter view.
     this.doToggleConfig();
+    if (userButtonConfigValueChanged) {
+        this.switchToBusyMode();
+        this.setStatus('[Reloading page...]');
+        window.location.reload();
+    }
 };
 
 QueueManager.prototype.doResetConfig = function () {
@@ -2547,7 +2570,9 @@ QueueManager.prototype.doResetConfig = function () {
         slowSortIndicatorTextElt = document.getElementById('slow-sort-indicator-text'),
         debugModeElt = document.getElementById('debug-mode'),
         dvdDetailPageUrlElt = document.getElementById('detail-page-url-' + Constants.QUEUE_DVD),
-        instantDetailPageUrlElt = document.getElementById('detail-page-url-' + Constants.QUEUE_INSTANT);
+        instantDetailPageUrlElt = document.getElementById('detail-page-url-' + Constants.QUEUE_INSTANT),
+        userButtonConfigElt = document.getElementById('user-button-config'),
+        userButtonConfigValue;
 
     // Reset option values.
     useCacheElt.checked = Constants.DEFAULTS['use-cache'];
@@ -2560,6 +2585,11 @@ QueueManager.prototype.doResetConfig = function () {
     debugModeElt.checked = Constants.DEFAULTS['debug-mode'];
     dvdDetailPageUrlElt.value = Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_DVD];
     instantDetailPageUrlElt.value = Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_INSTANT];
+    userButtonConfigValue = Constants.DEFAULTS['user-button-config'];
+    if (!userButtonConfigValue || 0 === userButtonConfigValue.length) {
+        userButtonConfigValue = this.getDefaultButtonConfig();
+    }
+    userButtonConfigElt.value = JSON.stringify(userButtonConfigValue);
 
     // Trigger event handlers.
     this.doUpdateUseCacheSubOptions();
@@ -2877,7 +2907,7 @@ QueueManager.prototype.loadButtonConfig = function () {
     // canned and default buttons separate.  And add button order.
 
     // Get user-defined buttons.
-    userButtonConfig = this.getCacheValue('user-button-config', []);
+    userButtonConfig = this.getCacheValue('user-button-config', Constants.DEFAULTS['user-button-config']);
 
     // Get user-defined button visibility and/or ordering.
     // Note: invisible buttons have order -1; new buttons do not have an order
@@ -2893,7 +2923,8 @@ QueueManager.prototype.loadButtonConfig = function () {
     function addToLookup(config) {
         for (ii = 0; ii < config.length; ii += 1) {
             if (undefined !== lookup[config[ii].id]) {
-                throw new Error('Button ' + config[ii].id + ' already defined');
+                // Until button config editor is implemented, assume overrides so don't complain.
+                //throw new Error('Button ' + config[ii].id + ' already defined');
             }
             lookup[config[ii].id] = config[ii];
         }
@@ -2910,7 +2941,11 @@ QueueManager.prototype.loadButtonConfig = function () {
     // Create the real config.
     if (undefined === buttonOrder || 0 === buttonOrder.length) {
         // User never customized buttons; use default buttons.
-        config = defaultButtonConfig;
+        if (!userButtonConfig || 0 === userButtonConfig.length) {
+            config = defaultButtonConfig;
+        } else {
+            config = userButtonConfig;
+        }
     } else {
         for (ii = 0; ii < buttonOrder.length; ii += 1) {
             if (undefined === lookup[buttonOrder[ii]]) {
@@ -3027,6 +3062,16 @@ QueueManager.prototype.getUiCssTemplate = function () {
         '#netflix-queue-sorter input {' +
             'margin: 0 0.5em;' +
         '}' +
+        '#netflix-queue-sorter textarea {' +
+            'margin: 0 0.5em;' +
+            'width: 50em;' +
+            'height: 4em;' +
+        '}' +
+        '#netflix-queue-sorter #user-button-config-label {' +
+            // TODO: find a better way to align this w/o using browser-specific top value.
+            'position: relative;' +
+            'top: -2.85em;' +
+        '}' +
         '#netflix-queue-sorter input#nqs-sort-limit-row-max {' +
             'margin-right: 0;' +
         '}' +
@@ -3061,7 +3106,7 @@ QueueManager.prototype.getUiCssTemplate = function () {
             // TODO: do this in a better way; this one does not hold up when zooming in.
             'position: relative;' +
             'top: -1.75em;' +
-            'left: 20em;' +
+            'left: 22em;' +
         '}' +
         '#nqs-config #save-config,' +
         '#nqs-config #cancel-config {' +
@@ -3102,18 +3147,23 @@ QueueManager.prototype.getUiHtmlTemplate = function () {
         slowSortIndicator = this.getCacheValue('slow-sort-indicator', Constants.DEFAULTS['slow-sort-indicator']),
         debugMode = this.getCacheValue('debug-mode', Constants.DEFAULTS['debug-mode']),
         dvdDetailPageUrl = this.getCacheValue('detail-page-url-' + Constants.QUEUE_DVD, Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_DVD]),
-        instantDetailPageUrl = this.getCacheValue('detail-page-url-' + Constants.QUEUE_INSTANT, Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_INSTANT]);
+        instantDetailPageUrl = this.getCacheValue('detail-page-url-' + Constants.QUEUE_INSTANT, Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_INSTANT]),
+        userButtonConfig = this.getCacheValue('user-button-config', Constants.DEFAULTS['user-button-config']);
+
+    if (!userButtonConfig || 0 === userButtonConfig.length) {
+        userButtonConfig = this.getDefaultButtonConfig();
+    }
 
     return '' +
         '<fieldset id="netflix-queue-sorter" data-view="sorter">' +
             '<legend align="center">Netflix Queue Sorter</legend>' +
-            '<legend class="config" align="center">Configure Netflix Queue Sorter v2.94</legend>' +
+            '<legend class="config" align="center">Configure Netflix Queue Sorter v2.95</legend>' +
             '<div id="nqs-controls">' +
                 // JSLint does not like these javascript hrefs (true, they do
                 // not follow the semantic layered markup rules), but at least
                 // they don't move the page up to the top, as # does.
                 '<a href="javascript:void(0)" id="nqs-icon-configure" class="nqs-icon-link" title="Configure"></a>' +
-                '<a href="http://userscripts.org/scripts/source/35183.user.js" id="nqs-icon-update" class="nqs-icon-link" title="Update Available"></a>' +
+                '<a href="' + window.location.protocol + '//userscripts.org/scripts/source/35183.user.js" id="nqs-icon-update" class="nqs-icon-link" title="Update Available"></a>' +
                 '<a href="javascript:void(0)" id="nqs-icon-undo" class="nqs-icon-link" title="Undo Last Sort"></a>' +
                 '<a href="javascript:void(0)" id="nqs-icon-cancel" class="nqs-icon-link" title="Cancel Sort"></a>' +
                 '<span id="nqs-icon-cancel-disabled" class="nqs-icon-link"></span>' +
@@ -3164,13 +3214,13 @@ QueueManager.prototype.getUiHtmlTemplate = function () {
                 // TODO: FUTURE: allow custom slowness indicator?
                 '<label for="slow-sort-indicator" title="If checked, sorts that are potentially slow are marked with the given indicator">' +
                     '<input type="checkbox" id="slow-sort-indicator"' + (slowSortIndicator ? ' checked="checked"' : '') + '>' +
-                    'Use sort button slowness indicator:' +
+                    'Display sort button slowness indicator:' +
                 '</label>' +
                 // Must be outside the label otherwise clicking in the field toggles the checkbox.
                 '<input type="text" id="slow-sort-indicator-text" size="5"' + (slowSortIndicator ? ' value="' + slowSortIndicator + '"' : '') + '>' +
                 '<label for="debug-mode" title="If checked, displays debug messages in the developer\'s console">' +
                     '<input type="checkbox" id="debug-mode"' + (debugMode ? ' checked="checked"' : '') + '>' +
-                    'Enable <a href="http://wiki.greasespot.net/GM_log" target="_new">debug mode</a>' +
+                    'Enable <a href="' + window.location.protocol + '//wiki.greasespot.net/GM_log" target="_new">debug mode</a>' +
                 '</label>' +
                 '<label for="detail-page-url-' + Constants.QUEUE_DVD + '" class="new-section" title="URL used to fetch movie details not present in the queue itself.  Use {hostName} as a placeholder for the queue page host name and {movieId} as a placeholder for the movie ID">' +
                     'DVD Queue movie details page template:' +
@@ -3180,7 +3230,11 @@ QueueManager.prototype.getUiHtmlTemplate = function () {
                     'Instant Queue movie details page template:' +
                     '<input type="text" id="detail-page-url-' + Constants.QUEUE_INSTANT + '" size="40" value="' + instantDetailPageUrl + '">' +
                 '</label>' +
-                '<p class="factory-reset">Reset all options to their factory default value: <button id="reset-config" title="Click this button to clear any customizations you may have made">Reset</button></p>' +
+                '<label for="user-button-config" class="new-section" title="Edit the JSON structure to override default button behavior or to add your own buttons.  For your own buttons, use an id other than \'d<number>\', e.g. \'custom<number>\'">' +
+                    '<span id="user-button-config-label">Button configuration:</span>' +
+                    '<textarea id="user-button-config">' + JSON.stringify(userButtonConfig) + '</textarea>' +
+                '</label>' +
+                '<p class="factory-reset"><button id="reset-config" title="Click this button to clear any customizations you may have made">Reset Options</button></p>' +
                 '<button id="save-config">Save</button>' +
                 '<button id="cancel-config">Cancel</button>' +
             '</div>' +
@@ -3191,7 +3245,7 @@ QueueManager.prototype.getUiUnsupportedHtmlTemplate = function () {
     // TODO: FUTURE: add IE here once it's supported.
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.94</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.95</legend>' +
             'Your browser is not supported.  Please use the latest ' +
             'version of Chrome, Firefox, Opera or Safari.' +
         '</fieldset>';
@@ -3720,7 +3774,7 @@ QueueManager.prototype.assertUniqueDataPoints = function () {
 QueueManager.prototype.checkForUpdates = function () {
     function versionCheckHandler(response) {
         var upgradeElt,
-            currentVersion = "2.94",   // Must be String for split usage below.
+            currentVersion = '2.95',   // Must be String for split usage below.
             latestVersion,
             result = /@version\s+([\d\.]+)/.exec(response.responseText);
 
@@ -3759,7 +3813,7 @@ QueueManager.prototype.checkForUpdates = function () {
     // TODO: FUTURE: Chrome and Opera do not support cross-domain XHRs.
     GM_xmlhttpRequest({
         method: 'GET',
-        url: 'http://userscripts.org/scripts/source/35183.meta.js',
+        url: window.location.protocol + '//userscripts.org/scripts/source/35183.meta.js',
         onload: versionCheckHandler,
         onerror: versionCheckHandler   // Only added for development mode.
     });
