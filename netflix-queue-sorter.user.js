@@ -3,18 +3,18 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 2.95 2012-12-26
+// Version 2.96 2012-12-30
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
-// Released under the GPL license: http://www.gnu.org/copyleft/gpl.html
+// Released under the MIT license: http://opensource.org/licenses/MIT
 //
 // ==UserScript==
 // @name        Netflix Queue Sorter
-// @version     2.95
+// @version     2.96
 // @author      Maarten
 // @namespace   https://userscripts.org/users/64961
 // @updateURL   https://userscripts.org/scripts/source/35183.meta.js
 // @downloadURL https://userscripts.org/scripts/source/35183.user.js
-// @description v2.95 for Chrome, Firefox, Opera, Safari: shuffle, reverse, and sort your DVD Queue or Instant Queue by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
+// @description v2.96 for Chrome, Firefox, Opera, Safari: shuffle, reverse, and sort your DVD Queue or Instant Queue by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
 // @match       *://movies.netflix.ca/Queue*
 // @match       *://www.netflix.ca/Queue*
 // @match       *://movies.netflix.com/Queue*
@@ -22,6 +22,21 @@
 // @match       *://www.netflix.com/Queue*
 // @match       *://ca.movies.netflix.com/Queue*
 // @match       *://ca.netflix.com/Queue*
+// NinjaKit doesn't seem to support @match, so use @include
+// @include       http://movies.netflix.ca/Queue*
+// @include       http://www.netflix.ca/Queue*
+// @include       http://movies.netflix.com/Queue*
+// @include       http://dvd.netflix.com/Queue*
+// @include       http://www.netflix.com/Queue*
+// @include       http://ca.movies.netflix.com/Queue*
+// @include       http://ca.netflix.com/Queue*
+// @include       https://movies.netflix.ca/Queue*
+// @include       https://www.netflix.ca/Queue*
+// @include       https://movies.netflix.com/Queue*
+// @include       https://dvd.netflix.com/Queue*
+// @include       https://www.netflix.com/Queue*
+// @include       https://ca.movies.netflix.com/Queue*
+// @include       https://ca.netflix.com/Queue*
 // ==/UserScript==
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -3157,7 +3172,7 @@ QueueManager.prototype.getUiHtmlTemplate = function () {
     return '' +
         '<fieldset id="netflix-queue-sorter" data-view="sorter">' +
             '<legend align="center">Netflix Queue Sorter</legend>' +
-            '<legend class="config" align="center">Configure Netflix Queue Sorter v2.95</legend>' +
+            '<legend class="config" align="center">Configure Netflix Queue Sorter v2.96</legend>' +
             '<div id="nqs-controls">' +
                 // JSLint does not like these javascript hrefs (true, they do
                 // not follow the semantic layered markup rules), but at least
@@ -3245,7 +3260,7 @@ QueueManager.prototype.getUiUnsupportedHtmlTemplate = function () {
     // TODO: FUTURE: add IE here once it's supported.
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.95</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.96</legend>' +
             'Your browser is not supported.  Please use the latest ' +
             'version of Chrome, Firefox, Opera or Safari.' +
         '</fieldset>';
@@ -3774,7 +3789,7 @@ QueueManager.prototype.assertUniqueDataPoints = function () {
 QueueManager.prototype.checkForUpdates = function () {
     function versionCheckHandler(response) {
         var upgradeElt,
-            currentVersion = '2.95',   // Must be String for split usage below.
+            currentVersion = '2.96',   // Must be String for split usage below.
             latestVersion,
             result = /@version\s+([\d\.]+)/.exec(response.responseText);
 
