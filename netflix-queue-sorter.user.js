@@ -3,18 +3,18 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 2.96 2012-12-30
+// Version 2.97 2013-01-07
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the MIT license: http://opensource.org/licenses/MIT
 //
 // ==UserScript==
 // @name        Netflix Queue Sorter
-// @version     2.96
+// @version     2.97
 // @author      Maarten
 // @namespace   https://userscripts.org/users/64961
 // @updateURL   https://userscripts.org/scripts/source/35183.meta.js
 // @downloadURL https://userscripts.org/scripts/source/35183.user.js
-// @description v2.96 for Chrome, Firefox, Opera, Safari: shuffle, reverse, and sort your DVD Queue or Instant Queue by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
+// @description v2.97 for Chrome, Firefox, Opera, Safari: shuffle, reverse, and sort your DVD Queue or Instant Queue by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
 // @match       *://movies.netflix.ca/Queue*
 // @match       *://www.netflix.ca/Queue*
 // @match       *://movies.netflix.com/Queue*
@@ -3141,6 +3141,9 @@ QueueManager.prototype.getUiCssTemplate = function () {
             'height: 16px;' +
             'display: block;' +
             'cursor: pointer;' +
+            // Make sure icon is "above" Netflix drag trigger.
+            'z-index: 10000;' +
+            'position: relative;' +
         '}';
 };
 
@@ -3172,7 +3175,7 @@ QueueManager.prototype.getUiHtmlTemplate = function () {
     return '' +
         '<fieldset id="netflix-queue-sorter" data-view="sorter">' +
             '<legend align="center">Netflix Queue Sorter</legend>' +
-            '<legend class="config" align="center">Configure Netflix Queue Sorter v2.96</legend>' +
+            '<legend class="config" align="center">Configure Netflix Queue Sorter v2.97</legend>' +
             '<div id="nqs-controls">' +
                 // JSLint does not like these javascript hrefs (true, they do
                 // not follow the semantic layered markup rules), but at least
@@ -3260,7 +3263,7 @@ QueueManager.prototype.getUiUnsupportedHtmlTemplate = function () {
     // TODO: FUTURE: add IE here once it's supported.
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.96</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.97</legend>' +
             'Your browser is not supported.  Please use the latest ' +
             'version of Chrome, Firefox, Opera or Safari.' +
         '</fieldset>';
@@ -3789,7 +3792,7 @@ QueueManager.prototype.assertUniqueDataPoints = function () {
 QueueManager.prototype.checkForUpdates = function () {
     function versionCheckHandler(response) {
         var upgradeElt,
-            currentVersion = '2.96',   // Must be String for split usage below.
+            currentVersion = '2.97',   // Must be String for split usage below.
             latestVersion,
             result = /@version\s+([\d\.]+)/.exec(response.responseText);
 
