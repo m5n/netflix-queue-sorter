@@ -3,40 +3,27 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 2.97 2013-01-07
+// Version 2.98 2013-11-22
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the MIT license: http://opensource.org/licenses/MIT
 //
 // ==UserScript==
 // @name        Netflix Queue Sorter
-// @version     2.97
+// @version     2.98
 // @author      Maarten
 // @namespace   https://userscripts.org/users/64961
 // @updateURL   https://userscripts.org/scripts/source/35183.meta.js
 // @downloadURL https://userscripts.org/scripts/source/35183.user.js
-// @description v2.97 for Chrome, Firefox, Opera, Safari: shuffle, reverse, and sort your DVD Queue or Instant Queue by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
-// @match       *://movies.netflix.ca/Queue*
-// @match       *://www.netflix.ca/Queue*
-// @match       *://movies.netflix.com/Queue*
-// @match       *://dvd.netflix.com/Queue*
-// @match       *://www.netflix.com/Queue*
-// @match       *://ca.movies.netflix.com/Queue*
-// @match       *://ca.netflix.com/Queue*
+// @description v2.98 for Chrome, Firefox, Opera, Safari: shuffle, reverse, and sort your DVD Queue or Instant Queue by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
+// @match       *://*.netflix.ca/Queue*
+// @match       *://*.netflix.com/Queue*
+// @match       *://*.netflix.ca/MyList*
+// @match       *://*.netflix.com/MyList*
 // NinjaKit doesn't seem to support @match, so use @include
-// @include       http://movies.netflix.ca/Queue*
-// @include       http://www.netflix.ca/Queue*
-// @include       http://movies.netflix.com/Queue*
-// @include       http://dvd.netflix.com/Queue*
-// @include       http://www.netflix.com/Queue*
-// @include       http://ca.movies.netflix.com/Queue*
-// @include       http://ca.netflix.com/Queue*
-// @include       https://movies.netflix.ca/Queue*
-// @include       https://www.netflix.ca/Queue*
-// @include       https://movies.netflix.com/Queue*
-// @include       https://dvd.netflix.com/Queue*
-// @include       https://www.netflix.com/Queue*
-// @include       https://ca.movies.netflix.com/Queue*
-// @include       https://ca.netflix.com/Queue*
+// @include       htt*://*.netflix.ca/Queue*
+// @include       htt*://*.netflix.com/Queue*
+// @include       htt*://*.netflix.ca/MyList*
+// @include       htt*://*.netflix.com/MyList*
 // ==/UserScript==
 //
 ///////////////////////////////////////////////////////////////////////////////
@@ -220,7 +207,7 @@ var Retriever = function (id, config) {
             if (undefined === config[field].selectable ||
                     undefined === config[field].extractFn ||
                     undefined === config[field].display) {
-                throw new Error(id + ': error in retriever config');
+                throw id + ': error in retriever config';
             }
 
             // Collect data points exposed to user.
@@ -392,7 +379,7 @@ Retriever.prototype = {
     // Allows the retriever to massage any data before it is displayed.
     // (This is supposed to be quick; no XHRs here.)
     initCachedData: function (cachedData) {
-        throw new Error('Missing implementation of initCachedData');
+        throw 'Missing implementation of initCachedData';
     },
 
     // Indicates if this retriever is able to retrieve data for the given
@@ -402,7 +389,7 @@ Retriever.prototype = {
             result = false;
 
         if (undefined === this.allDataPointConfig) {
-            throw new Error('Retriever not initialized');
+            throw 'Retriever not initialized';
         }
 
         // Don't care about IDs being selectable or not so use
@@ -518,7 +505,7 @@ Retriever.prototype = {
     // The Retriever base class will take care of putting all data for all
     // movies together and calling back to the Queue Manager.
     asyncRetrieveMovieData: function (fields, cache, callback) {
-        throw new Error('Missing implementation of asyncRetrieveMovieData');
+        throw 'Missing implementation of asyncRetrieveMovieData';
     },
 
     asyncRetrieveData: function (idx, fields, cachedData, checkin, callback) {
@@ -594,9 +581,9 @@ Retriever.prototype = {
             }
         }
         if (0 === fieldsToRetrieve.length) {
-            throw new Error(this.id + ': no fields to retrieve; why was ' +
+            throw this.id + ': no fields to retrieve; why was ' +
                     'this retriever called? (fields: ' +
-                    JSON.stringify(fields) + ')');
+                    JSON.stringify(fields) + ')';
         }
 
         // Note: to avoid creating new data structures, we will just use
@@ -737,8 +724,14 @@ NetflixDetailsPageRetriever.prototype.extractAvgRating = function (id, dom) {
 };
 
 NetflixDetailsPageRetriever.prototype.extractYear = function (id, dom) {
+    var elts = dom.getElementsByClassName('year');
+
     // <span class="year">1999</span>
-    return parseInt(dom.getElementsByClassName('year')[0].innerHTML, 10);
+    // <span class="detailsMeta showYear">2013</span>
+    if (!elts || !elts.length) {
+        elts = dom.getElementsByClassName('showYear');
+    }
+    return Number(elts[0].innerHTML);
 };
 
 // Extract a definition-term's data (<dt><dd>).
@@ -982,7 +975,7 @@ NetflixDetailsPageRetriever.prototype.extractMediaFormat = function (id, dom) {
 
         if (0 === formats.length) {
             // TODO: NOW: the code above does not work.  Avoid exception.
-            //throw new Error(id + ': format not found');
+            //throw id + ': format not found';
         }
     } else {
         // Check DVD availability.
@@ -1232,7 +1225,7 @@ QueueManager.prototype.extractOrder = function (trElt) {
     }
 
     if (undefined === result) {
-        throw new Error('Could not extract order: ' + trElt.innerHTML);
+        throw 'Could not extract order: ' + trElt.innerHTML;
     }
 
     return result;
@@ -1308,12 +1301,13 @@ QueueManager.prototype.extractTitle = function (trElt) {
 //       Can we make this work?
 QueueManager.prototype.extractPlayability = function (trElt) {
     var elt = trElt.getElementsByClassName(Constants.QUEUE_INSTANT === this.queueId ? 'wn' : 'wi')[0],
+	elt2 = elt.getElementsByTagName('a'),
         // Note: to avoid extra work in the sort fn, convert to a
         // case-insensitive string comparison format here.
         value = this.trim(elt.innerHTML).toUpperCase(),
         result;
 
-    if (value.indexOf('<A ') >= 0) {
+    if ((elt2 && elt2.length) || value.indexOf('<A ') >= 0) {
         result = 'NOW';
     } else {
         result = value.length > 0 ? value : undefined;
@@ -1332,7 +1326,7 @@ QueueManager.prototype.extractStarRating = function (trElt) {
         if (/sbmf-(\d+)/.test(elt.getAttribute('class'))) {
             return Number(RegExp.$1) / 10;
         } else {
-            throw new Error('Could not extract star rating');
+            throw 'Could not extract star rating';
         }
     }
     // Else could be a series disc; will be retrieved later.
@@ -1859,7 +1853,7 @@ QueueManager.prototype.retrieveExternalData = function (sortableData,
             }
         }
         if (!found) {
-            throw new Error('No callback was pending for ' + this.getId());
+            throw 'No callback was pending for ' + this.getId();
         }
 
         progressBaseLine = 100 * (1 - pending.length / toInvoke.length);
@@ -1971,7 +1965,7 @@ QueueManager.prototype.retrieveQueueDataCallback = function (data, configObj,
             // Handled later.
             break;
         default:
-            throw new Error('Unknown command: ' + configObj.command);
+            throw 'Unknown command: ' + configObj.command;
         }
     }
 
@@ -2733,7 +2727,7 @@ QueueManager.prototype.assertCorrectButtonConfig = function (config) {
     }
 
     if (!ok) {
-        throw new Error('Button config incorrect: ' + JSON.stringify(config));
+        throw 'Button config incorrect: ' + JSON.stringify(config);
     }
 };
 
@@ -2939,7 +2933,7 @@ QueueManager.prototype.loadButtonConfig = function () {
         for (ii = 0; ii < config.length; ii += 1) {
             if (undefined !== lookup[config[ii].id]) {
                 // Until button config editor is implemented, assume overrides so don't complain.
-                //throw new Error('Button ' + config[ii].id + ' already defined');
+                //throw 'Button ' + config[ii].id + ' already defined';
             }
             lookup[config[ii].id] = config[ii];
         }
@@ -2964,7 +2958,7 @@ QueueManager.prototype.loadButtonConfig = function () {
     } else {
         for (ii = 0; ii < buttonOrder.length; ii += 1) {
             if (undefined === lookup[buttonOrder[ii]]) {
-                throw new Error('Button ' + buttonOrder[ii] + ' not defined');
+                throw 'Button ' + buttonOrder[ii] + ' not defined';
             }
             config.push(lookup[buttonOrder[ii]]);
         }
@@ -3144,6 +3138,11 @@ QueueManager.prototype.getUiCssTemplate = function () {
             // Make sure icon is "above" Netflix drag trigger.
             'z-index: 10000;' +
             'position: relative;' +
+        '}' +
+
+        // Don't show info icon on deleted rows.
+        '[data-deleted="1"] .nqs-movie-info-icon {' +
+            'display: none;' +
         '}';
 };
 
@@ -3175,7 +3174,7 @@ QueueManager.prototype.getUiHtmlTemplate = function () {
     return '' +
         '<fieldset id="netflix-queue-sorter" data-view="sorter">' +
             '<legend align="center">Netflix Queue Sorter</legend>' +
-            '<legend class="config" align="center">Configure Netflix Queue Sorter v2.97</legend>' +
+            '<legend class="config" align="center">Configure Netflix Queue Sorter v2.98</legend>' +
             '<div id="nqs-controls">' +
                 // JSLint does not like these javascript hrefs (true, they do
                 // not follow the semantic layered markup rules), but at least
@@ -3263,7 +3262,7 @@ QueueManager.prototype.getUiUnsupportedHtmlTemplate = function () {
     // TODO: FUTURE: add IE here once it's supported.
     return '' +
         '<fieldset id="netflix-queue-sorter">' +
-            '<legend align="center">Netflix Queue Sorter v2.97</legend>' +
+            '<legend align="center">Netflix Queue Sorter v2.98</legend>' +
             'Your browser is not supported.  Please use the latest ' +
             'version of Chrome, Firefox, Opera or Safari.' +
         '</fieldset>';
@@ -3484,7 +3483,7 @@ QueueManager.prototype.showUi = function () {
             this.customAddEventListener(elts[ee], 'click', undoEventHandler);
             break;
         default:
-            throw new Error('Unexpected icon-link ID: ' + id);
+            throw 'Unexpected icon-link ID: ' + id;
         }
     }
 
@@ -3708,24 +3707,30 @@ QueueManager.prototype.getQueueId = function () {
                     id = Constants.QUEUE_DVD;
                 } else {
                     // The Netflix source code might have changed.
-                    throw new Error('Unknown queue type');
+                    throw 'Unknown queue type';
                 }
             }
         }
     } else {
-        // Account profiles only have a DVD queue.
-        // Make sure not to step on the main profile's settings, 
-        // so cannot use 'dvd' here... we really need the profile ID.
-        // TODO: NOW: how to get current user's profile ID?
-        // TODO: NOW: and even if we get it, button config is all based on
-        //            dvd... for now, use 'dvd' and avoid updating cache.
-        id = Constants.QUEUE_DVD;
+        tabs = document.getElementsByClassName('nav-item-current');
+	if (tabs && tabs.length &&
+                tabs[0].getAttribute('id') === 'nav-watchinstantly') {
+            id = Constants.QUEUE_INSTANT;
+        } else {
+            // Account profiles only have a DVD queue.
+            // Make sure not to step on the main profile's settings, 
+            // so cannot use 'dvd' here... we really need the profile ID.
+            // TODO: NOW: how to get current user's profile ID?
+            // TODO: NOW: and even if we get it, button config is all based on
+            //            dvd... for now, use 'dvd' and avoid updating cache.
+            id = Constants.QUEUE_DVD;
 
-        // Per TODOs above, avoid updating cache.
-        this.disableCache = true;
-        // Also apply to all retrievers.
-        for (tt = 0; tt < this.allNonQueueRetrievers.length; tt += 1) {
-            this.allNonQueueRetrievers[tt].disableCache = this.disableCache;
+            // Per TODOs above, avoid updating cache.
+            this.disableCache = true;
+            // Also apply to all retrievers.
+            for (tt = 0; tt < this.allNonQueueRetrievers.length; tt += 1) {
+                this.allNonQueueRetrievers[tt].disableCache = this.disableCache;
+            }
         }
     }
 
@@ -3768,12 +3773,11 @@ QueueManager.prototype.assertUniqueDataPoints = function () {
             if (fieldsConfig.hasOwnProperty(ff)) {
                 // Make sure all data points are unique.
                 if (idsSeen[ff]) {
-                    throw new Error('Data point id "' + ff +
-                            '" is not unique');
+                    throw 'Data point id "' + ff + '" is not unique';
                 }
                 if (stringsSeen[fieldsConfig[ff].display]) {
-                    throw new Error('Data point display string "' +
-                            fieldsConfig[ff].display + '" is not unique');
+                    throw 'Data point display string "' +
+                            fieldsConfig[ff].display + '" is not unique';
                 }
                 idsSeen[ff] = true;
                 stringsSeen[fieldsConfig[ff].display] = true;
@@ -3792,7 +3796,7 @@ QueueManager.prototype.assertUniqueDataPoints = function () {
 QueueManager.prototype.checkForUpdates = function () {
     function versionCheckHandler(response) {
         var upgradeElt,
-            currentVersion = '2.97',   // Must be String for split usage below.
+            currentVersion = '2.98',   // Must be String for split usage below.
             latestVersion,
             result = /@version\s+([\d\.]+)/.exec(response.responseText);
 
@@ -3824,7 +3828,7 @@ QueueManager.prototype.checkForUpdates = function () {
             // Chrome and Opera will get here as they does not support
             // cross-domain XHR.
             // See http://code.google.com/p/chromium/issues/detail?id=18857#c111
-            throw new Error("Parse error: " + JSON.stringify(response));
+            throw "Parse error: " + JSON.stringify(response);
         }
     }
 
