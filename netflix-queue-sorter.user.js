@@ -3,18 +3,18 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 2.100 2014-01-04
+// Version 2.101 2014-01-04
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the MIT license: http://opensource.org/licenses/MIT
 //
 // ==UserScript==
 // @name        Netflix Queue Sorter
-// @version     2.100
+// @version     2.101
 // @author      Maarten
 // @namespace   https://userscripts.org/users/64961
 // @updateURL   https://userscripts.org/scripts/source/35183.meta.js
 // @downloadURL https://userscripts.org/scripts/source/35183.user.js
-// @description v2.100 for Chrome, Firefox, Opera, Safari: shuffle, reverse, and sort your DVD Queue or Instant Queue by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
+// @description v2.101 for Chrome, Firefox, Opera, Safari: shuffle, reverse, and sort your DVD Queue or Instant Queue by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
 // @match *://*.netflix.ca/Queue*
 // @match *://*.netflix.com/Queue*
 // @match *://*.netflix.ca/MyList*
@@ -40,26 +40,26 @@
 //
 ///////////////////////////////////////////////////////////////////////////////
 /*global ActiveXObject, alert, clearTimeout, confirm, document, JSON, setTimeout, window, XMLHttpRequest */   // Satisfy JSLint.
-    
+
 (function () {
     "use strict";
-    
-    
-    
+
+
+
     // TODO: FUTURE: check TODO list and forum discussions for more work
     // TODO: FUTURE: Make this script run in IE!
-    
-    
-    
+
+
+
     /*
     This object defines constant values used throughout the script.
     */
     var Constants = {};
-    
+
     // These are the queue types Netflix offers.
     Constants.QUEUE_DVD = 'dvd';
     Constants.QUEUE_INSTANT = 'instant';
-    
+
     // Factory defaults.
     Constants.DEFAULTS = {
         'use-cache': true,
@@ -73,9 +73,9 @@
     };
     Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_DVD] = window.location.protocol + '//{hostName}/Movie/{movieId}';
     Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_INSTANT] = window.location.protocol + '//{hostName}/movie/{movieId}?fdvd=true';
-    
-    
-    
+
+
+
     // Alternative for browsers who do not have the GM_xmlhttpRequest method, AND
     // for getting around the "browser is configured to block third-party cookies"
     // issue; see https://github.com/greasemonkey/greasemonkey/issues/1169
@@ -95,11 +95,11 @@
                     return new ActiveXObject("Microsoft.XMLHTTP");
                 }
             ];
-    
+
         function createXMLHTTPObject() {
             var xmlhttp = false,
                 i;
-    
+
             for (i = 0; i < XMLHttpFactories.length; i += 1) {
                 try {
                     xmlhttp = XMLHttpFactories[i]();
@@ -110,7 +110,7 @@
             }
             return xmlhttp;
         }
-    
+
         function sendRequest(url, callback, method, postData, onError,
                     onReadyStateChange) {
             var req = createXMLHTTPObject();
@@ -133,11 +133,11 @@
                     responseHeaders: req.responseHeaders,
                     finalUrl: url
                 };
-    
+
                 if (onReadyStateChange) {
                     onReadyStateChange(response);
                 }
-    
+
                 if (req.readyState !== 4) {
                     return;
                 }
@@ -147,7 +147,7 @@
                     }
                     return;
                 }
-    
+
                 callback(response);
             };
             if (req.readyState === 4) {
@@ -155,29 +155,29 @@
             }
             req.send(postData);
         }
-    
+
         sendRequest(config.url, config.onload, config.method, config.data,
                 config.onerror, config.onreadystatechange);
     }
-    
+
     // Add support for GM_xmlHttpRequest function for those browsers who do not
     // have it, e.g. Opera.
     if (!window.GM_xmlhttpRequest) {
         window.GM_xmlhttpRequest = GM_xmlhttpRequest2;
     }
-    
-    
-    
+
+
+
     /*
     This class defines a data retriever object.
-    
+
     A data retriever defines a set of data points it is capable of retrieving and
     is used by the queue manager to fetches data for a given set of movies.
-    
+
     It is expected that child classes override only those Retriever's function
     that would otherwise throw an error.  The QueueManager only may override
     other Retriever functions.
-    
+
     The config object passed here must be an object containing as keys the fields
     this retriever can fetch data for, each mapped to a set of properties.
     The set of properties MUST include the following:
@@ -191,13 +191,13 @@
     var Retriever = function (id, config) {
         var field,
             selectableDataPoints = {};
-    
+
         // Make sure this constructor works when called w/o arguments.
         if (undefined === config) {
             // Assume we're called by a subclass' prototype initialization.
             return;
         }
-    
+
         for (field in config) {
             if (config.hasOwnProperty(field)) {
                 // Sanity check to make sure config is what we expect.
@@ -206,32 +206,32 @@
                         undefined === config[field].display) {
                     throw id + ': error in retriever config';
                 }
-    
+
                 // Collect data points exposed to user.
                 if (config[field].selectable) {
                     selectableDataPoints[field] = config[field].display;
                 }
             }
         }
-    
+
         this.id = id;
         this.selectableDataPoints = selectableDataPoints;
         this.allDataPointConfig = config;
-    
+
         // Queue ID.
         this.queueId = undefined;   // Initialized in initConfigOptions().
-    
+
         // Debug mode.
         this.isDebug = false;   // Initialized in initConfigOptions().
-    
+
         // Disable cache?
         this.disableCache = false;   // Possibly overridden in getQueueId().
     };
-    
+
     // XHR delay to avoid bombarding the servers with requests.
     // See http://developer.netflix.com/docs/Security for limits.
     Retriever.XHR_DELAY = 1000 / 4;   // 4 requests per second, in milliseconds
-    
+
     Retriever.prototype = {
         debug: function (msg) {
             // Check this only once and then redefine this function.
@@ -250,17 +250,17 @@
                     alert(msg);
                 };
             }
-    
+
             // Call the new version.
             this.debug(msg);
         },
-    
+
         // Trims leading and trailing space off of a string.
         trim: function (str) {
             // Thanks, http://javascript.crockford.com/remedial.html
             return str.replace(/^\s*(\S*(?:\s+\S+)*)\s*$/, "$1");
         },
-    
+
         // Adds an event listener to an element.
         customAddEventListener: function (elt, type, handler) {
             // Check this only once and then redefine this function.
@@ -273,11 +273,11 @@
                     elt.attachEvent("on" + type, handler);
                 };
             }
-    
+
             // Call the new version.
             this.customAddEventListener(elt, type, handler);
         },
-    
+
         // Replaces "{key}" substrings with their associated value.
         substituteVars: function (str, kvPairs) {
             // Thanks, http://javascript.crockford.com/remedial.html
@@ -289,20 +289,20 @@
                 }
             );
         },
-    
+
         // Tests if a given element has a specific class or not.
         hasClass: function (elt, cl) {
             var re = new RegExp('\\b' + cl + '\\b');
             return re.test(elt.getAttribute('class'));
         },
-    
+
         // Wrapper around GM_g/setValue for ease of use and to support browsers
         // which do not yet support GM_g/setValue, such as Chrome.
         // Thanks, http://devign.me/greasemonkey-gm_getvaluegm_setvalue-functions-for-google-chrome/
         // See also: http://code.google.com/p/chromium/issues/detail?id=33089
         getCacheValue: function (key, defaultValue) {
             var value;
-    
+
             if (this.disableCache) {
                 // Skip; use default value.
                 value = undefined;
@@ -316,12 +316,12 @@
             } else if (window.localStorage) {
                 value = window.localStorage[key];
             }
-    
+
             // Avoid breakage of JSON.parse below.
-            if ('' === value || "undefined" === value) {
+            if ('' === value || 'undefined' === value) {
                 value = undefined;
             }
-    
+
             if (undefined !== value && null !== value) {
                 value = JSON.parse(value);
             } else if (undefined !== defaultValue) {
@@ -357,38 +357,38 @@
                 delete window.localStorage[key];
             }
         },
-    
+
         // Returns a unique identified for this retriever.
         getId: function () {
             return this.id;
         },
-    
+
         // Returns only the user-facing sortable fields.
         getSelectableDataPoints: function () {
             return this.selectableDataPoints;
         },
-    
+
         // Returns all sortable fields.
         getAllDataPointConfig: function () {
             return this.allDataPointConfig;
         },
-    
+
         // Allows the retriever to massage any data before it is displayed.
         // (This is supposed to be quick; no XHRs here.)
         initCachedData: function (cachedData) {
             throw 'Missing implementation of initCachedData';
         },
-    
+
         // Indicates if this retriever is able to retrieve data for the given
         // config.
         canRetrieveData: function (fields) {
             var ff,
                 result = false;
-    
+
             if (undefined === this.allDataPointConfig) {
                 throw 'Retriever not initialized';
             }
-    
+
             // Don't care about IDs being selectable or not so use
             // allDataPointConfig.
             for (ff = 0; ff < fields.length; ff += 1) {
@@ -397,26 +397,26 @@
                     break;
                 }
             }
-    
+
             return result;
         },
-    
+
         // Default sort function; sorts numbers sequentially and strings
         // alphabetically.
         defaultSortFn: function (a, b) {
             var result;
-    
+
             // TODO: PERFORMANCE: split this into numeric and string sort fn to
             // avoid so many ifs.
             if (typeof a === 'number' && typeof b === 'number') {
                 result = a - b;
-    
+
             // Missing optional values should always go at the end.
             } else if (undefined !== a && undefined === b) {
                 result = 1;
             } else if (undefined === a && undefined !== b) {
                 result = -1;
-    
+
             // Standard lexicographical order.
             } else {
                 if (a === b) {
@@ -427,10 +427,10 @@
                     result = 1;
                 }
             }
-    
+
             return result;
         },
-    
+
         // Custom sort function; sorts values according to the given order.
         // Does a date compare for dates (order should contain "{date}" for date
         // comparison), but otherwise does an exact match; caller should make sure
@@ -442,7 +442,7 @@
                 dateB,
                 idx,
                 vv;
-    
+
             // This function should also support values that are an array of values.
             if ('object' !== typeof a) {
                 a = [ a ];
@@ -450,7 +450,7 @@
             if ('object' !== typeof b) {
                 b = [ b ];
             }
-    
+
             for (idx = 0; idx < order.length &&
                     (Number.MAX_VALUE === aIdx || Number.MAX_VALUE === bIdx);
                     idx += 1) {
@@ -487,47 +487,47 @@
                     }
                 }
             }
-    
+
             // Handle date order if both values are dates.
             if (undefined !== dateA && undefined !== dateB) {
                 aIdx = dateA.getTime();
                 bIdx = dateB.getTime();
             }
-    
+
             // Lower index goes before higher index.
             return bIdx - aIdx;
         },
-    
+
         // Child classes use this method to retrieve data for one movie only.
         // The Retriever base class will take care of putting all data for all
         // movies together and calling back to the Queue Manager.
         asyncRetrieveMovieData: function (fields, cache, callback) {
             throw 'Missing implementation of asyncRetrieveMovieData';
         },
-    
+
         asyncRetrieveData: function (idx, fields, cachedData, checkin, callback) {
             var self = this;
-    
+
             // Find the next one we shouldn't skip.
             while (idx < cachedData.length &&
                     cachedData[idx]['skip-' + this.id]) {
                 delete cachedData[idx]['skip-' + this.id];
                 idx += 1;
             }
-    
+
             // All done?
             if (idx >= cachedData.length) {
                 // Make sure to set "this" to this retriever object.
                 callback.call(this);
                 return;
             }
-    
+
             this.asyncRetrieveMovieData(fields, cachedData[idx], function () {
                 if (self.isDebug) {
                     self.debug('Retrieved movie data: ' +
                             JSON.stringify(cachedData[idx]));
                 }
-    
+
                 // TODO: FUTURE: use custom events instead.
                 var cancelled = checkin(idx);
                 if (cancelled) {
@@ -535,7 +535,7 @@
                             checkin, callback);
                     return;
                 }
-    
+
                 // Next, but don't overload servers and don't delay if no next.
                 if (idx + 1 >= cachedData.length) {
                     self.asyncRetrieveData(idx + 1, fields, cachedData,
@@ -550,7 +550,7 @@
                 }
             });
         },
-    
+
         // Returns data for the given config.
         // Note: all queue fields will be present in cachedData.
         retrieveData: function (fields, cachedData, checkin, callback) {
@@ -560,17 +560,17 @@
             // is left up to the user through a config option.
             // By default, cached data for a movie will remain for as long as that
             // movie is in the queue.
-    
+
             // Note: this periodic refetch decision must stay on retriever level,
             // as some retrievers always can return the latest data w/o penalty,
             // e.g. queueRetriever.
-    
+
             var forceRefresh = this.getCacheValue('force-refresh', Constants.DEFAULTS['force-refresh']),
                 fieldsToRetrieve = [],
                 ff,
                 cc,
                 ii;
-    
+
             // First make sure there was a purpose for this retriever being called.
             for (ff = 0; ff < fields.length; ff += 1) {
                 if (undefined !== this.allDataPointConfig[fields[ff]]) {
@@ -582,7 +582,7 @@
                         'this retriever called? (fields: ' +
                         JSON.stringify(fields) + ')';
             }
-    
+
             // Note: to avoid creating new data structures, we will just use
             // cachedData but mark those that can be skipped.  We need to mark
             // those to skip otherwise we'd have to do more work if forcedRefresh
@@ -597,7 +597,7 @@
                     // Only get data for this ID if the cache is incomplete.
                     cc = cachedData[ii];
                     cc['skip-' + this.id] = true;
-    
+
                     for (ff = 0; ff < fieldsToRetrieve.length; ff += 1) {
                         if (undefined === cc[fieldsToRetrieve[ff]]) {
                             delete cc['skip-' + this.id];
@@ -606,10 +606,10 @@
                     }
                 }
             }
-    
+
             // Now that marking has been done based on fields to retrieve, we can
             // do optimizations.
-    
+
             // Always retrieve all fields so that they can be cached.
             // Note: only retrieve selectable fields; backup fields will be pulled
             // as needed.
@@ -619,15 +619,15 @@
                     fieldsToRetrieve.push(ff);
                 }
             }
-    
+
             // Now go fetch the data for these IDs.
             this.asyncRetrieveData(0, fieldsToRetrieve, cachedData, checkin,
                     callback);
         }
     };
-    
-    
-    
+
+
+
     /*
     This retriever fetches data from a Netflix details page.
     */
@@ -636,13 +636,13 @@
             /*
             data point         | fn to get value from tr elt          | expose to user?  | display string
             */
-    
+
             // Fields that sometimes cannot be retrieved from the queue itself
             // e.g. because of series discs.
             // These are for internal-use only.
             // Their name must be queue field name + '2'.
             starRating2:       { extractFn: 'extractStarRating2',       selectable: false, display: 'Star Rating (Backup)' },
-    
+
             // All other fields that only appear on the details page.
             year:              { extractFn: 'extractYear',              selectable:  true, display: 'Year' },
             language:          { extractFn: 'extractLanguage',          selectable:  true, display: 'Language' },
@@ -658,24 +658,24 @@
             reviews:           { extractFn: 'extractReviews',           selectable:  true, display: 'Reviews' }
     */
         };
-    
+
     // TODO: FUTURE: is DVD release date available somewhere on Netflix?  Other?
-    
+
     // TODO: FUTURE: different formats have different properties (e.g. length)
     //       --> add preferred format (maybe based on format sort setting)
     //       well, instant queue always uses instant length
     //       Check extractMediaFormat; there are named anchors with details
     //       just use .parentNode to find the top and then look at the dd/dt.
-    
+
         Retriever.call(this, 'netflix-details-page', config);
     };
-    
+
     NetflixDetailsPageRetriever.prototype = new Retriever();
-    
+
     NetflixDetailsPageRetriever.prototype.initCachedData = function (cachedData) {
         // No init needed as this retriever has no fields which values expire.
     };
-    
+
     NetflixDetailsPageRetriever.prototype.extractRating = function (dom, idx) {
         // There are two ratings here, so pick the right one.
         // idx 0: star rating
@@ -687,7 +687,7 @@
         var rating,
             elts = dom.getElementsByClassName('rating'),
             txt = '';
-    
+
         // Instant accounts have 2 class="rating" elements.
         // DVD account have 2 only for rated movies.  Not-yet-rated movies only
         // have the average rating as class="rating"; the star rating will have to
@@ -704,25 +704,25 @@
                 txt = elts[0].innerHTML;
             }
         }
-    
+
         if (/([\d\.]+)/.test(txt)) {
             rating = Number(RegExp.$1);
         }
-    
+
         return rating;
     };
-    
+
     NetflixDetailsPageRetriever.prototype.extractStarRating2 = function (id, dom) {
         return this.extractRating(dom, 0);
     };
-    
+
     NetflixDetailsPageRetriever.prototype.extractAvgRating = function (id, dom) {
         return this.extractRating(dom, 1);
     };
-    
+
     NetflixDetailsPageRetriever.prototype.extractYear = function (id, dom) {
         var elts = dom.getElementsByClassName('year');
-    
+
         // <span class="year">1999</span>
         // <span class="detailsMeta showYear">2013</span>
         if (!elts || !elts.length) {
@@ -730,14 +730,14 @@
         }
         return Number(elts[0].innerHTML);
     };
-    
+
     // Extract a definition-term's data (<dt><dd>).
     NetflixDetailsPageRetriever.prototype.extractDdElt = function (dom, dtVal) {
         var dts = dom.getElementsByTagName('dt'),
             dds,
             ii,
             ddElt;
-    
+
         for (ii = 0; ii < dts.length; ii += 1) {
             if (dts[ii].innerHTML === dtVal) {
                 // For Instant accounts, the dt and dd are together within one
@@ -745,59 +745,59 @@
                 // a parent.  So, count back down from the parent.
                 dds = dts[ii].parentNode.getElementsByTagName('dd');
                 dts = dts[ii].parentNode.getElementsByTagName('dt');
-    
+
                 for (ii = 0; ii < dts.length; ii += 1) {
                     if (dts[ii].innerHTML === dtVal) {
                         ddElt = dds[ii];
                         break;
                     }
                 }
-    
+
                 break;
             }
         }
-    
+
         return ddElt;
     };
-    
+
     NetflixDetailsPageRetriever.prototype.extractLanguage = function (id, dom) {
         // <dt>Language:</dt>
         // <dd>French</dd>
         var langElt = this.extractDdElt(dom, 'Language:'),
             language;
-    
+
         if (undefined === langElt) {
             language = 'English';
         } else {
             language = this.trim(langElt.innerHTML);
         }
-    
+
         return language;
     };
-    
+
     // Returns length in seconds.
     NetflixDetailsPageRetriever.prototype.extractLength = function (id, dom) {
         // Some discs have no length, e.g.
         // http://movies.netflix.com/Movie/Frontier-House-Disc-2/60028868?trkid=226871
         // instead, they have "2 discs" as the value for "duration".
-    
+
         var elts = dom.getElementsByClassName('duration'),
             ee,
             txt,
             len;
-    
+
         // Movies soon-to-be-released may not have a length yet.
         if (elts.length > 0) {
             txt = elts[0].innerHTML;
             if (/(\d+)hr (\d+)m/.test(txt)) {
                 len = parseInt(RegExp.$1, 10) * 60 + parseInt(RegExp.$2, 10);
-    
+
             } else if (/(\d+)hr/.test(txt) || /(\d+) minutes/.test(txt)) {
                 len = parseInt(RegExp.$1, 10) * 60;
-    
+
             } else if (/(\d+)m/.test(txt) || /(\d+) minutes/.test(txt)) {
                 len = parseInt(RegExp.$1, 10);
-    
+
             // "Old" style page (regular size box image).
             } else if (/(\d+) discs/.test(txt)) {
                 // Find duration of first episode, if any.
@@ -812,7 +812,7 @@
                         }
                     }
                 }
-    
+
             // "New" style page (oversized image).
             // Could be Series, Seasons, Episodes, Volumes, Chapters, Collections.
             } else {
@@ -826,31 +826,31 @@
                 }
             }
         }
-    
+
         return len;
     };
-    
+
     NetflixDetailsPageRetriever.prototype.extractMaturityRating = function (dom, className) {
         var rating,
             elts = dom.getElementsByClassName(className);
-    
+
         if (elts.length > 0) {
             // "New" style pages have a value element.
             if (elts[0].getElementsByClassName('value').length > 0) {
                 rating = elts[0].getElementsByClassName('value')[0].innerHTML;
-    
+
             // "Old" style pages have a link, "new" style do not.
             } else if (elts[0].getElementsByTagName('a').length > 0) {
                 rating = elts[0].getElementsByTagName('a')[0].innerHTML;
-    
+
             } else {
                 rating = elts[0].innerHTML;
             }
         }
-    
+
         return rating;
     };
-    
+
     NetflixDetailsPageRetriever.prototype.extractMpaaRating = function (id, dom) {
         // <div class="maturityRating certRating  clearfix">
         //     <a href="http://www.netflix.com/Help?id=1632" class="value">NR</a>
@@ -858,7 +858,7 @@
         //         Not rated. This movie has not been rated.
         //     </p>
         // </div>
-    
+
         // Movies.n.c uses certRating, but www.n.c uses mpaaRating.
         var rating = this.extractMaturityRating(dom, 'certRating');
         if (undefined === rating) {
@@ -866,7 +866,7 @@
         }
         return rating;
     };
-    
+
     NetflixDetailsPageRetriever.prototype.extractCommonSenseRating = function (id, dom) {
         // <div class="maturityRating csmRating csmRating-IFFY clearfix">
         //     <a href="http://movies.netflix.com/Movie/Fantastic_Planet/17968278?csm=true" class="value">12</a>
@@ -877,7 +877,7 @@
         // </div>
         return this.extractMaturityRating(dom, 'csmRating');
     };
-    
+
     NetflixDetailsPageRetriever.prototype.extractNumRatings = function (id, dom) {
         // <div class="starbar starbar-avg stbrWrapStc">
         //     <p class="label">Average of 54,945 ratings:</p>
@@ -886,28 +886,28 @@
         var num,
             elt,
             txt;
-    
+
         elt = dom.getElementsByClassName('starbar-avg')[0];
         txt = elt.getElementsByTagName('p')[0].innerHTML;
-    
+
         if (/([\d\,]+)/.test(txt)) {
             txt = RegExp.$1;
             txt = txt.replace(/,/g, '');
             num = parseInt(txt, 10);
         }
-    
+
         return num;
     };
-    
+
     NetflixDetailsPageRetriever.prototype.extractNumDiscs = function (id, dom) {
         // Some discs have no length, e.g.
         // http://movies.netflix.com/Movie/Frontier-House-Disc-2/60028868?trkid=226871
         // instead, they have "2 discs" as the value for "duration".
-    
+
         var elts = dom.getElementsByClassName('duration'),
             txt,
             num = 1;   // Default to 1.
-    
+
         // Movies soon-to-be-released may not have a length yet.
         if (elts.length > 0) {
             txt = elts[0].innerHTML;
@@ -915,10 +915,10 @@
                 num = parseInt(RegExp.$1, 10);
             }
         }
-    
+
         return num;
     };
-    
+
     NetflixDetailsPageRetriever.prototype.extractMediaFormat = function (id, dom) {
         // <dt>Format:</dt>
         // <dd>
@@ -945,7 +945,7 @@
         // Capitalization may differ, e.g. "Streaming" if streaming only.
         var formatElt = this.extractDdElt(dom, 'Format:'),
             formats = [];
-    
+
         if (undefined === formatElt) {
             // Could be "new" format of details page.
             // TODO: NOW: figure out where the HD/BluR/etc is.
@@ -955,7 +955,7 @@
             if (document.getElementById('edEpisodesToggle')) {
                 formats.push('STREAMING');
             }
-    
+
             formatElt = this.extractDdElt(dom, 'Streaming');
             if (undefined === formatElt) {
                 if (Constants.QUEUE_INSTANT === this.queueId) {
@@ -969,7 +969,7 @@
                     formats.push('HD');
                 }
             }
-    
+
             if (0 === formats.length) {
                 // TODO: NOW: the code above does not work.  Avoid exception.
                 //throw id + ': format not found';
@@ -980,43 +980,43 @@
                     !/DVD availability date unknown/.test(formatElt.innerHTML)) {
                 formats.push('DVD');
             }
-    
+
             // Check Blu-ray availability.
             if (/Blu-ray/.test(formatElt.innerHTML)) {
                 formats.push('BLU-RAY');
             }
-    
+
             // Check Streaming availability.
             if (/[sS]treaming/.test(formatElt.innerHTML)) {
                 formats.push('STREAMING');
             }
-    
+
             // Check HD availability.
             if (/HD/.test(formatElt.innerHTML)) {
                 formats.push('HD');
             }
         }
-    
+
         return formats;
     };
-    
+
     NetflixDetailsPageRetriever.prototype.extractReviews = function (id, dom) {
         var elt = dom.getElementsByClassName('reviews-header'),
             num = 0;   // Default to 0.
-    
+
         if (elt.length > 0) {
             elt = elt[0].getElementsByClassName('info');
-    
+
             if (elt.length > 0) {
                 if (/(\d+)/m.test(this.trim(elt[0].innerHTML))) {
                     num = parseInt(RegExp.$1, 10);
                 }
             }
         }
-    
+
         return num;
     };
-    
+
     NetflixDetailsPageRetriever.prototype.extractDateAdded = function (id, dom) {
         // <div class="module module-relationship">
         //     <div class="bd clearfix">
@@ -1024,29 +1024,29 @@
         //         ...
         //     </div>
         // </div>
-    
+
         var elt = dom.getElementsByClassName('module-relationship')[0];
-    
+
         // Note: to make sort faster, we should return time in seconds here, but
         // that makes the movie info display not readable.  Opt for readability.
         if (elt && /(\d+\/\d+\/\d+)/.test(elt.innerHTML)) {
             return RegExp.$1;
         }
     };
-    
+
     NetflixDetailsPageRetriever.prototype.asyncRetrieveMovieData = function (fields, cache, callback) {
         var self = this,
             url = this.substituteVars(
                 this.getCacheValue('detail-page-url-' + this.queueId, Constants.DEFAULTS['detail-page-url-' + this.queueId]),
                 { hostName: window.location.host, movieId: cache.movieId }
             );
-    
+
         function parsePage(response) {
             var ff,
                 extractFnStr,
                 extractVal,
                 dom;
-    
+
             // Convert to DOM.
             // TODO: PERFORMANCE: if this turns out to be expensive, an
             //       alternative is to search response.responseText via regexes,
@@ -1054,7 +1054,7 @@
             //       to code though.
             dom = document.createElement('div');
             dom.innerHTML = response.responseText;
-    
+
             // Note: we're extracting only what we need, one field at a time.
             // If this turns out to be a performance bottleneck, a possible
             // improvement can be to retrieve all possible fields in one go, and
@@ -1071,10 +1071,10 @@
                     cache[fields[ff]] = extractVal;
                 }
             }
-    
+
             callback.call(self);
         }
-    
+
         if (self.isDebug) {
             self.debug('Retrieving: ' + url);
         }
@@ -1088,18 +1088,18 @@
             onerror: parsePage   // Only added for development mode.
         });
     };
-    
-    
-    
+
+
+
     /*
     This object is a wrapper around the Netflix queue and drives the Netflix Queue
     Sorter script.
-    
+
     It utilizes a (hardcoded) list of data point retrievers to (a) determine the
     total set of sortable fields, and (b) to fetch the data needed to perform a
     sort operation.
     As it wraps the Netflix queue, this object is a retriever itself.
-    
+
     As a performance improvement, it will manage previously retrieved data by
     utilizing the GM settings as a persistant storage.
     */
@@ -1117,66 +1117,66 @@
             genre:        { extractFn: 'extractGenre',        maybeEmpty: false, shown:  true, selectable:  true, display: 'Genre' },
             availability: { extractFn: 'extractAvailability', maybeEmpty: false, shown:  true, selectable:  true, display: 'Availability' }
         };
-    
+
         // The list of data point retrievers.
         this.allNonQueueRetrievers = [
             new NetflixDetailsPageRetriever()
         ];
-    
+
         // Lookup needed for all sorts but independent of a specific sort.
         // This is the set of queue fields in array form.
         this.allQueueFieldsArray = [];
-    
+
         // The Netflix update queue button.
         this.updateQueueButton = null;   // Initialized in showUi().
-    
+
         // The sort progress status element.
         this.statusElt = null;   // Initialized in showUi().
-    
+
         // Timer ID for clearing the status area when the user cancels a sort.
         this.clearStatusTimerId = undefined;   // Initialized in doCancelSort().
-    
+
         // Indication of whether or not user cancelled a sort.
         this.cancelled = false;
-    
+
         // To switch back and forth between normal UI and sort-in-progress UI,
         // we need to remember the icon display states.
         this.iconDisplayStates = {};
-    
+
         // A local copy of the cached (non-queue) retriever data, to avoid
         // de/serializing this potentially big object.
         this.cachedData = {};   // Initialized in showCachedData().
-    
+
         Retriever.call(this, 'netflix-queue', config);
     };
-    
+
     // Use numeric values for the sort directions to avoid an IF condition and
     // a string comparison in the sort function.
     QueueManager.SORT_ASC = 1;
     QueueManager.SORT_DESC = -1;
-    
+
     QueueManager.prototype = new Retriever();
-    
+
     QueueManager.prototype.initConfigOptions = function () {
         var rr;
-    
+
         this.queueId = this.getQueueId();
         this.isDebug = this.getCacheValue('debug-mode', Constants.DEFAULTS['debug-mode']);
-    
+
         // Also apply to all retrievers.
         for (rr = 0; rr < this.allNonQueueRetrievers.length; rr += 1) {
             this.allNonQueueRetrievers[rr].queueId = this.queueId;
             this.allNonQueueRetrievers[rr].isDebug = this.isDebug;
         }
     };
-    
+
     QueueManager.prototype.createSortIndependentLookups = function () {
         var ii;
-    
+
         // Note: these lookups cannot be created in the constructor as they make
         // use of variables that are set in the base constructor, e.g.
         // this.allDataPointConfig.  This is why we're "delaying" that init.
-    
+
         // Lookup needed for all sorts but independent of a specific sort.
         // This is the set of queue fields in array form.
         for (ii in this.allDataPointConfig) {
@@ -1185,7 +1185,7 @@
             }
         }
     };
-    
+
     // Readily retrievable queue data should not pollute cachedData.  The manager
     // should never call this function and we should let the base class throw an
     // exception if it is called.
@@ -1194,21 +1194,21 @@
         // Not needed as all queue data is already visible. 
     };
     */
-    
+
     QueueManager.prototype.canRetrieveData = function (fields) {
         // Override default; the manager should always use the latest queue data.
         return true;
     };
-    
+
     QueueManager.prototype.extractMovieId = function (trElt) {
         return Number(trElt.getAttribute('data-mid'));
     };
-    
+
     QueueManager.prototype.extractSeriesId = function (trElt) {
         var value = trElt.getAttribute('series');
         return value ? Number(value) : undefined;
     };
-    
+
     QueueManager.prototype.extractOrder = function (trElt) {
         // User could have changed the numbers in the order fields,
         // so don't use value in text field.  The hidden field has
@@ -1216,7 +1216,7 @@
         var elts = trElt.getElementsByClassName('pr'),
             ee,
             result;
-    
+
         elts = elts[0].getElementsByTagName('input');
         for (ee = 0; ee < elts.length; ee += 1) {
             if ('hidden' === elts[ee].getAttribute('type')) {
@@ -1224,23 +1224,23 @@
                 break;
             }
         }
-    
+
         if (undefined === result) {
             throw 'Could not extract order: ' + trElt.innerHTML;
         }
-    
+
         return result;
     };
-    
+
     QueueManager.prototype.extractTitle = function (trElt) {
         // Do some initialization the first time this function is called.
-    
+
         var
             self = this,
-    
+
             // Use true as default as Netflix' sorts ignore articles too.
             ignoreArticles = this.getCacheValue('ignore-articles', Constants.DEFAULTS['ignore-articles']),
-    
+
             // The articles are used "as-is", so there must be a space after
             // each one in most cases.
             // Note: as of v2.x, users can no longer customize the articles.
@@ -1256,12 +1256,12 @@
                 'L\'',   // L'avventura
                 '\''     // 'night Mother
             ];
-    
+
         function convertTitle(title) {
             var aa,
                 re,
                 article;
-    
+
             if (ignoreArticles) {
                 for (aa = 0; aa < articles.length; aa += 1) {
                     article = articles[aa];
@@ -1274,25 +1274,25 @@
                     }
                 }
             }
-    
+
             // Note: to avoid extra work in the sort fn, convert to a
             // case-insensitive string comparison format here.
             // This is needed as not all movie titles (esp. foreign ones) use
             // the same word capitalization.
             return title.toUpperCase();
         }
-    
+
         // Now redefine this function.
         QueueManager.prototype.extractTitle = function (trElt) {
             var elt = trElt.getElementsByClassName('tt')[0];
             elt = elt.getElementsByClassName('mdpLink')[0];
             return convertTitle(self.trim(elt.innerHTML));
         };
-    
+
         // And call it.
         return this.extractTitle(trElt);
     };
-    
+
     // Returns "Now" for playable movies, "" for non-playable movies,
     // and a date string of format d/m/yy or "Coming soon" for 
     // soon-to-be-playable movies.
@@ -1307,21 +1307,21 @@
             // case-insensitive string comparison format here.
             value = this.trim(elt.innerHTML).toUpperCase(),
             result;
-    
+
         if ((elt2 && elt2.length) || value.indexOf('<A ') >= 0) {
             result = 'NOW';
         } else {
             result = value.length > 0 ? value : undefined;
         }
-    
+
         return result;
     };
-    
+
     // Returns the numeric star rating, or throws an exception if 
     // the rating cannot be extracted.
     QueueManager.prototype.extractStarRating = function (trElt) {
         var elt = trElt.getElementsByClassName('st')[0];
-    
+
         elt = elt.getElementsByClassName('stbrMaskFg')[0];
         if (undefined !== elt) {
             if (/sbmf-(\d+)/.test(elt.getAttribute('class'))) {
@@ -1332,20 +1332,20 @@
         }
         // Else could be a series disc; will be retrieved later.
     };
-    
+
     QueueManager.prototype.extractGenre = function (trElt) {
         var elt = trElt.getElementsByClassName('gn')[0],
             elt2;
-    
+
         // Movies.n.c has genre class, but www.n.c has just a elt.
         elt2 = elt.getElementsByClassName('genre')[0];
         if (!elt2) {
             elt2 = elt.getElementsByTagName('a')[0];
         }
-    
+
         return elt2.innerHTML;
     };
-    
+
     // Extracts availability indication; could be a date of format m/dd/yyyy.
     // TODO: FUTURE: ideally this fn returns a Date object if the extracted value
     //       is a date to avoid work in sort fn.  However,
@@ -1354,7 +1354,7 @@
     QueueManager.prototype.extractAvailability = function (trElt) {
         var result,
             elt = trElt.getElementsByClassName('av')[0];
-    
+
         // Movies.n.c uses av elt for Unavailable items, but www.n.c uses km elt.
         if (!elt) {
             if (trElt.getElementsByClassName('km')[0]) {
@@ -1364,7 +1364,7 @@
             // Movies.n.c uses em class, but www.n.c uses em elt.
             if (this.hasClass(elt, 'em')) {
                 // There's a value here.
-    
+
                 // Note: to avoid extra work in the sort fn, convert to a
                 // case-insensitive string comparison format here.
                 result = this.trim(elt.innerHTML).toUpperCase();
@@ -1376,10 +1376,10 @@
                 result = this.trim(elt.getElementsByTagName('em')[0].innerHTML).toUpperCase();
             }
         }
-    
+
         return result;
     };
-    
+
     QueueManager.prototype.applyToSelectedRowsOnly = function (value) {
         var elt = document.getElementById('nqs-use-sort-limit-rows');
         if (undefined !== value) {
@@ -1390,7 +1390,7 @@
             return elt.checked;
         }
     };
-    
+
     QueueManager.prototype.inputValueAsInt = function (id, value) {
         var elt = document.getElementById(id);
         if (undefined !== value) {
@@ -1402,36 +1402,36 @@
                     parseInt(elt.value, 10) - 1 : undefined;
         }
     };
-    
+
     QueueManager.prototype.minSelectedRowIndex = function (value) {
         return this.inputValueAsInt('nqs-sort-limit-row-min', value);
     };
-    
+
     QueueManager.prototype.maxSelectedRowIndex = function (value) {
         return this.inputValueAsInt('nqs-sort-limit-row-max', value);
     };
-    
+
     QueueManager.prototype.getListOrderInputs = function () {
         return document.getElementsByClassName('o');
     };
-    
+
     QueueManager.prototype.getTrEltForListOrderInput = function (orderElt) {
         return orderElt.parentNode.parentNode;
     };
-    
+
     QueueManager.prototype.getListTrElts = function () {
         // There is no good selector, so use order field.
         var ee,
             trElts = [],
             orderElts = this.getListOrderInputs();
-    
+
         for (ee = 0; ee < orderElts.length; ee += 1) {
             trElts.push(this.getTrEltForListOrderInput(orderElts[ee]));
         }
-    
+
         return trElts;
     };
-    
+
     // Reverses the ordering of the given data array.
     // Note: changes the given data array in place.
     QueueManager.prototype.doReverse = function (data) {
@@ -1439,18 +1439,18 @@
             otherIdx,
             idx,
             tmp;
-    
+
         maxIdx = Math.floor(data.length / 2);
         for (idx = 0; idx < maxIdx; idx += 1) {
             otherIdx = data.length - 1 - idx;
-    
+
             // Swap the array elements.
             tmp = data[idx];
             data[idx] = data[otherIdx];
             data[otherIdx] = tmp;
         }
     };
-    
+
     // Shuffles the ordering of the given data array.
     // Note: changes the given data array in place.
     QueueManager.prototype.doShuffle = function (data) {
@@ -1458,19 +1458,19 @@
             slots = [],
             newData = [],
             slotsIdx;
-    
+
         // Generate a list of positions to choose from.
         for (idx = 0; idx < data.length; idx += 1) {
             slots.push(idx);
         }
-    
+
         for (idx = 0; idx < data.length; idx += 1) {
             // Choose the next position at random.
             // Generate number between 0 and slots.length - 1.
             // Math.random() generates a number between 0 (incl) and 1 (excl).
             slotsIdx = Math.floor(Math.random() * slots.length);
             newData[idx] = data[slots[slotsIdx]];
-    
+
             // Remove used position from slots array, in effect making sure that
             // index into the data array is not used again.
             slots.splice(slotsIdx, 1);
@@ -1478,13 +1478,13 @@
             // the slotsIdx value to the front of the array and keep a pointer
             // to the end of the "used" positions.
         }
-    
+
         // Copy the new data back into the data array.
         for (idx = 0; idx < data.length; idx += 1) {
             data[idx] = newData[idx];
         }
     };
-    
+
     QueueManager.prototype.retrieveData = function (fields, cachedData,
             checkin, callback) {
         var extractFnStr,
@@ -1496,17 +1496,17 @@
             rr,
             result,
             data;
-    
+
         // Note: because all data can be retrieved from the queue without XHRs,
         // don't use cacheData unless it is proven to be a bottleneck.
-    
+
         // Retrieve the tr elts.
         trElts = this.getListTrElts();
-    
+
         if (this.isDebug) {
             this.debug('Retrieved ' + trElts.length + ' <tr> elts');
         }
-    
+
         // Check if user want to limit the sort to a range of rows.
         // Note: validateUserInput() already made sure the option and entered
         // limits are valid.
@@ -1517,12 +1517,12 @@
             minRow = 0;
             maxRow = trElts.length - 1;
         }
-    
+
         // Note: we're extracting only what we need, one field at a time.
         // If this turns out to be a performance bottleneck, a possible
         // improvement can be to retrieve all possible fields in one go, and then
         // extract what is needed from there.
-    
+
         result = [];
         for (rr = minRow; rr <= maxRow; rr += 1) {
             data = {};
@@ -1538,24 +1538,24 @@
                     }
                 }
             }
-    
+
             result.push(data);
         }
-    
+
         // Make sure to set "this" to this retriever object.
         callback.call(this, result);
     };
-    
+
     QueueManager.prototype.getSortFn = function (buttonConfig) {
         var self = this;
-    
+
         return function (a, b) {
             var result = 0,
                 level = 0,
                 order,
                 field,
                 sortFn;
-    
+
             // Custom order of values, if any.
             if (undefined !== buttonConfig.cacheKey) {
                 // Order is customizable.
@@ -1565,23 +1565,23 @@
                 // Not customizable, use default order.
                 order = buttonConfig.defaultOrder;
             }
-    
+
             while (0 === result && level < buttonConfig.fields.length) {
                 field = buttonConfig.fields[level];
                 sortFn = self[buttonConfig.sortFns[level]];
-    
+
                 result = sortFn(a[field], b[field], order);
-    
+
                 // Note: the values of asc (1) and desc (-1) were specifically
                 // chosen to make this statement as efficient as possible.
                 result *= buttonConfig.dirs[level];
-    
+
                 level += 1;
             }
             return result;
         };
     };
-    
+
     // The cache argument should be an array of objects each containing an "order"
     // property representing the original order.
     QueueManager.prototype.commitSort = function (cache) {
@@ -1592,31 +1592,31 @@
             idx,
             origOrder,
             orderChanged;
-    
+
         if (this.isDebug) {
             this.debug('sorted cache:\n' + JSON.stringify(cache));
         }
-    
+
         // Going to apply new order and save undo state; user can no longer cancel.
         this.switchToNoMoreCancelMode();
-    
+
         oElts = this.getListOrderInputs();
         if (this.applyToSelectedRowsOnly()) {
             minRow = this.minSelectedRowIndex();
             maxRow = this.maxSelectedRowIndex();
-    
+
             // Save min/max row so they can be displayed when the page loads.
             this.setCacheValue('last-min-row-' + this.queueId, minRow);
             this.setCacheValue('last-max-row-' + this.queueId, maxRow);
         } else {
             minRow = 0;
             maxRow = oElts.length - 1;
-    
+
             // Don't save min/max row.
             this.deleteCacheValue('last-min-row-' + this.queueId);
             this.deleteCacheValue('last-max-row-' + this.queueId);
         }
-    
+
         // Save current order for undo purposes.
         origOrder = {};
         for (rr = 0; rr < oElts.length; rr += 1) {
@@ -1626,7 +1626,7 @@
             this.debug('original order:\n' + JSON.stringify(origOrder));
         }
         this.setCacheValue('undo-order-' + this.queueId, origOrder);
-    
+
         // Apply new sort order.
         orderChanged = false;
         for (idx = 0, rr = minRow; rr <= maxRow; rr += 1, idx += 1) {
@@ -1636,7 +1636,7 @@
             // Always override possibly user-changed order value.
             oElts[cache[idx].order - 1].value = rr + 1;
         }
-    
+
         if (orderChanged) {
             // TODO: FUTURE: is this really needed?  reload does not work?
             this.setCacheValue('reload-trigger', true);   // TODO: NOW: remove trigger
@@ -1670,20 +1670,20 @@
             this.setStatus('[Order unchanged.]');
         }
     };
-    
+
     QueueManager.prototype.doSort = function (cache, configObj) {
         if (this.isDebug) {
             this.debug('\nDo sort.');
         }
-    
+
         this.setStatus('[Sorting...]');
-    
+
         // Sort the data.
         cache = cache.sort(this.getSortFn(configObj));
-    
+
         this.commitSort(cache);
     };
-    
+
     // Returns a map from backup field name -> original field name.
     QueueManager.prototype.determineBackupFields = function (fields) {
         var backupFields = {},
@@ -1692,7 +1692,7 @@
             rr,
             field,
             config;
-    
+
         for (ff = 0; ff < fields.length; ff += 1) {
             field = fields[ff];
             if (undefined !== this.allDataPointConfig[field]) {
@@ -1708,17 +1708,17 @@
                 }
             }
         }
-    
+
         return backupFieldsEmpty ? undefined : backupFields;
     };
-    
+
     QueueManager.prototype.determineSeriesLookup = function (data, backupFields) {
         var rr,
             ff,
             ok,
             origField,
             seriesLookup = {};
-    
+
         for (rr = 0; rr < data.length; rr += 1) {
             // If this row was part of a series, save its info for later.
             if (undefined !== data[rr].seriesId) {
@@ -1743,10 +1743,10 @@
                 }
             }
         }
-    
+
         return seriesLookup;
     };
-    
+
     QueueManager.prototype.retrieveExternalData = function (sortableData,
                 configObj, retrievers, allDoneCallback) {
         var toInvoke = [],
@@ -1759,7 +1759,7 @@
             checkin,
             retrieveDataCallback,
             self;
-    
+
         // Now we've retrieved all data from the queue itself and we're about
         // to call external retrievers (if any).  The 'sortableData' variable
         // containing the queue data tells the retrievers for which movies (which
@@ -1770,7 +1770,7 @@
         // of this.cachedData can be generated and stored.  (Because 
         // this.cachedData does not contain readily available queue data, there is
         // no need to do anything with it here.)
-    
+
         // Merge any previously retrieved data from this.cachedData into
         // sortableData.
         // Note: this.cachedData was initialized by init().
@@ -1787,8 +1787,8 @@
         if (this.isDebug) {
             this.debug('data for retrievers:\n' + JSON.stringify(sortableData));
         }
-    
-    
+
+
         // Don't invoke retrievers immediately as we could end up with a race
         // condition where the retriever invoked already comes back before
         // the next retriever is invoked, causing the manager to conclude
@@ -1801,7 +1801,7 @@
             toInvoke.push(retrievers[ii]);
             pending.push(retrievers[ii]);
         }
-    
+
         if (0 === pending.length) {
             // So far we've only retrieved data from the queue itself, which does
             // not belong in this.cachedData.  So, no need to update anything.
@@ -1810,18 +1810,18 @@
             allDoneCallback.call(this, sortableData, configObj);
             return;
         }
-    
+
         if (this.isDebug) {
             this.debug('\nFetch retriever data.');
         }
-    
+
         self = this;
         if (this.applyToSelectedRowsOnly()) {
             newCache = this.cachedData;   // Update data in existing cache.
         } else {
             newCache = {};   // Replace existing cache.
         }
-    
+
         // The check-in function is a means for the retriever to report progress to
         // the queue manager, and for the queue manager to notify the retriever of
         // and additional instructions, such as the command to cancel.
@@ -1831,11 +1831,11 @@
                 // Manager updates progress based on retriever's report.
                 self.setStatus('[Retrieving data... ' + Math.floor(progressBaseLine + 100 * (idx + 1) / sortableData.length) + '%]');
             }
-    
+
             // Manager lets retriever know if it should abort its processing.
             return self.cancelled;
         };
-    
+
         retrieveDataCallback = function () {
             var cc,
                 dd,
@@ -1843,7 +1843,7 @@
                 cancelled,
                 found,
                 key;
-    
+
             found = false;
             for (pp = 0; pp < pending.length; pp += 1) {
                 // Remove pending status for this retriever.
@@ -1856,20 +1856,20 @@
             if (!found) {
                 throw 'No callback was pending for ' + this.getId();
             }
-    
+
             progressBaseLine = 100 * (1 - pending.length / toInvoke.length);
             cancelled = checkin(0);
             if (cancelled) {
                 return;
             }
-    
+
             // Sortable data is now updated with the retrieved data.
-    
+
             if (this.isDebug) {
                 this.debug(this.getId() + ': sortableData is now:\n' +
                         JSON.stringify(sortableData));
             }
-    
+
             // Merge retrieved data into cache.  Always overwrite any old data.
             // Note: sortableData has queue data as well, which does not belong in
             // the cache.
@@ -1893,27 +1893,27 @@
                 this.debug(this.getId() + ': newCache is now:\n' +
                         JSON.stringify(newCache));
             }
-    
+
             if (0 === pending.length) {
                 if (this.isDebug) {
                     this.debug('\nAll callbacks received.');
                 }
-    
+
                 if (self.getCacheValue('use-cache', Constants.DEFAULTS['use-cache'])) {
                     // We now have the latest data, so persist it for next time.
                     // Note: "this" = current retriever, "self" = queue manager.
                     self.setStatus('[Updating cache...]');
                     self.cachedData = newCache;
-    
+
                     key = 'movie-data-' + self.queueId;
                     self.setCacheValue(key, self.cachedData);
                 }
-    
+
                 // No more callbacks pending.
                 allDoneCallback.call(self, sortableData, configObj);
             }
         };
-    
+
         for (ii = 0; ii < toInvoke.length; ii += 1) {
             if (this.isDebug) {
                 this.debug('Retrieve fields: ' + JSON.stringify(configObj.fields) +
@@ -1924,7 +1924,7 @@
                     sortableData, checkin, retrieveDataCallback);
         }
     };
-    
+
     QueueManager.prototype.retrieveQueueDataCallback = function (data, configObj,
                 retrievers) {
         var field,
@@ -1945,12 +1945,12 @@
             fakeConfigObj,
             queueDataWithMissingFields,
             self = this;
-    
+
         if (this.isDebug) {
             this.debug(this.getId() + ': retrieved data:\n' +
                     JSON.stringify(data));
         }
-    
+
         // Process commands first, if any.
         // TODO: FUTURE: allow commands to be run in any order.
         for (aa = 0; aa < configObj.length; aa += 1) {
@@ -1969,18 +1969,18 @@
                 throw 'Unknown command: ' + configObj.command;
             }
         }
-    
+
         if (undefined === sortCommandConfig) {
             // Done.
-    
+
             this.commitSort(data);
             return;
         }
-    
+
         // Make sure all data is present.  If a data point is missing, it may be
         // derived from another disc in the same series, or else it needs to be
         // retrieved from the details page.
-    
+
         backupFields = this.determineBackupFields(sortCommandConfig.fields);
         backupFieldsEmpty = false;
         if (undefined === backupFields) {
@@ -1991,7 +1991,7 @@
             this.debug(this.getId() + ': backup fields:\n' +
                     JSON.stringify(backupFields));
         }
-    
+
         // The seriesLookup is there only as a way to prevent doing an XHR to
         // retrieve backup field, so only create the lookup if there are backup
         // fields involved.
@@ -2003,12 +2003,12 @@
             this.debug(this.getId() + ': series lookup:\n' +
                     JSON.stringify(seriesLookup));
         }
-    
+
         // Store the extra fields to lookup for certain IDs.
         extraFieldToOrigLookup = {};   // backup field name -> orig field name
         extraFieldsById = {};   // ID -> backup field(s)
         queueDataWithMissingFields = [];
-    
+
         for (rr = 0; rr < data.length; rr += 1) {
             for (ff = 0; ff < sortCommandConfig.fields.length; ff += 1) {
                 field = sortCommandConfig.fields[ff];
@@ -2025,7 +2025,7 @@
                                 data[rr][field] = seriesData[field];
                             }
                         }
-    
+
                         // Look up cached data to complete info.
                         // This is a bit of a corner case anyway, and rating data
                         // can easily get stale with a sizeable queue, so let's
@@ -2042,13 +2042,13 @@
                             }
                         }
                         */
-    
+
                         // If still undefined, and not optional, and there is a
                         // backup defined, look it up via another retriever.
                         if (undefined === data[rr][field] &&
                                 false === config.maybeEmpty &&
                                 undefined !== backupFields[field + '2']) {
-    
+
                             // For this ID, we need to look up more data.
                             // Note: this ID need not be part of a series
                             // necessarily, so we can't just do one series lookup
@@ -2058,7 +2058,7 @@
                             // are from the same series.
                             if (undefined === extraFieldsById[data[rr].movieId]) {
                                 extraFieldsById[data[rr].movieId] = [];
-    
+
                                 // Note: what is stored here is a reference, so if
                                 // data[rr] changes later, e.g. a series lookup
                                 // populates the next empty field,
@@ -2073,12 +2073,12 @@
                 }
             }
         }
-    
+
         if (this.isDebug) {
             this.debug(this.getId() + ': backup data to retrieve:\n' +
                     JSON.stringify(extraFieldsById));
         }
-    
+
         // Make sure the retrievers needed for extraFieldsById are already in the
         // (external) "retrievers" array.
         // If they are already, we can easily tag on the backup fields.
@@ -2124,19 +2124,19 @@
                 }
             }
         }
-    
+
         if (this.isDebug) {
             this.debug(this.getId() + ': extra retrievers to call:\n' +
                     JSON.stringify(extraRetrievers));
         }
-    
+
         if (0 !== extraRetrievers.length) {
             // Get missing data first, then call (external) retrievers.
-    
+
             // TODO: FUTURE: ideally we build queueDataWithMissingFields here,
             //       where we need it, but since data is an array and is not easy
             //       to look an ID up in, we did it earlier.
-    
+
             // Build fake config obj containing the missing fields.
             // Remember, extraFieldToOrigLookup is an object, so convert to array.
             // TODO: PERFORMANCE: This could be inefficient; we already know what
@@ -2160,7 +2160,7 @@
                     fakeConfigObj.fields.push(aa);
                 }
             }
-    
+
             // Calling this fn gets the retrieved data added to this.cachedData
             // (which also gets persisted--TODO: PERFORMANCE: avoid that for this
             // call?) and to queueDataWithMissingFields.  So when this call
@@ -2172,18 +2172,18 @@
                     id,
                     ff,
                     lookup = {};
-    
+
                 // Now put the retrieved backup data back in the real fields.
                 // TODO: PERFORMANCE: can this be made more efficient?  To add the
                 //       looked up info we're stepping through the entire data
                 //       array...
-    
+
                 // Create a lookup first.
                 for (ii = 0; ii < sortableData.length; ii += 1) {
                     id = sortableData[ii].movieId;
                     lookup[id] = sortableData[ii];
                 }
-    
+
                 // Now go through the data array and add the retrieved data.
                 for (ii = 0; ii < data.length; ii += 1) {
                     id = data[ii].movieId;
@@ -2204,7 +2204,7 @@
                         }
                     }
                 }
-    
+
                 // Now call (external) retrievers for the rest of the data we need
                 // to do the sort.
                 this.retrieveExternalData(data, sortCommandConfig, retrievers, function (sortableData, sortCommandConfig) {
@@ -2217,21 +2217,21 @@
             });
         }
     };
-    
+
     QueueManager.prototype.validateUserInput = function () {
         var len = this.getListOrderInputs().length,
             result = true,
             msg,
             minRow,
             maxRow;
-    
+
         // The only user input is for the row selection.
         // TODO: FUTURE: find a way of selecting rows where user never inputs
         //       anything so this can be avoided, e.g. right-click menus on rows.
         if (this.applyToSelectedRowsOnly()) {
             minRow = this.minSelectedRowIndex();
             maxRow = this.maxSelectedRowIndex();
-    
+
             if (undefined === minRow || minRow < 0 ||
                     undefined === maxRow || maxRow < 0 || maxRow > len - 1) {
                 msg = 'You chose to apply this sort to specific rows.\nMake ' +
@@ -2256,18 +2256,18 @@
                 }
             }
         }
-    
+
         return result;
     };
-    
+
     QueueManager.prototype.getStatus = function () {
         return this.statusElt.innerHTML;
     };
-    
+
     QueueManager.prototype.setStatus = function (status) {
         this.statusElt.innerHTML = status;
     };
-    
+
     QueueManager.prototype.setElementsDisability = function (tagName, isDisabled) {
         var ee,
             elts = document.getElementById('netflix-queue-sorter').getElementsByTagName(tagName);
@@ -2279,22 +2279,22 @@
             }
         }
     };
-    
+
     // Mode for when an operation is in progress.
     QueueManager.prototype.switchToBusyMode = function (button) {
         var elts, ee;
-    
+
         // Highlight current sort button.
         // (Don't display the button text anywhere else as it's user entered text
         // and so we cannot control the length.  Use visual indication instead.)
         if (undefined !== button) {
             button.setAttribute('class', 'active');
         }
-    
+
         // Disable all UI buttons and inputs.
         this.setElementsDisability('button', true);
         this.setElementsDisability('input', true);
-    
+
         // Hide all icons but remember icon display states so we can restore later.
         elts = document.getElementsByClassName('nqs-icon-link');
         for (ee = 0; ee < elts.length; ee += 1) {
@@ -2302,11 +2302,11 @@
                     elts[ee].style.display;
             elts[ee].style.display = 'none';
         }
-    
+
         // Show cancel button.
         document.getElementById('nqs-icon-cancel').style.display = 'block';
     };
-    
+
     // Mode for when sort can no longer be cancelled.
     QueueManager.prototype.switchToNoMoreCancelMode = function () {
         // Hide cancel button.
@@ -2314,28 +2314,28 @@
         document.getElementById('nqs-icon-cancel-disabled').style.display =
                 'block';
     };
-    
+
     QueueManager.prototype.switchToUserMode = function () {
         var elts, ee;
-    
+
         // Remove active button indication.
         elts = document.getElementById('netflix-queue-sorter').getElementsByTagName('button');
         for (ee = 0; ee < elts.length; ee += 1) {
             elts[ee].removeAttribute('class');
         }
-    
+
         // Restore icon display states to what it was before the sort.
         // Note: this will also hide the cancel button.
         elts = document.getElementsByClassName('nqs-icon-link');
         for (ee = 0; ee < elts.length; ee += 1) {
             elts[ee].style.display = this.iconDisplayStates[elts[ee].getAttribute('id')];
         }
-    
+
         // Enable all UI buttons and inputs.
         this.setElementsDisability('button', false);
         this.setElementsDisability('input', false);
     };
-    
+
     // This function is called by each of the sort buttons and does any work
     // necessary except for the actual sort, which is done by doSort().
     QueueManager.prototype.prepSort = function (evt) {
@@ -2347,39 +2347,39 @@
             ii,
             fieldsToRetrieve,
             callback;
-    
+
         if (this.isDebug) {
             this.debug('prepSort: ' + JSON.stringify(configObj));
         }
-    
+
         // Hide Netflix' "Your Queue has been reordered" message.
         elts = document.getElementsByClassName('svfmsg-s');
         for (ii = 0; ii < elts.length; ii += 1) {
             elts[ii].style.display = 'none';
         }
-    
+
         if (false === this.validateUserInput()) {
             // Still in user mode so no need to switch back.
             return;
         }
-    
+
         // A new sort is starting.
         this.cancelled = false;
-    
+
         // We're going to change the status, so clear any timer associated with it.
         if (undefined !== this.clearStatusTimerId) {
             clearTimeout(this.clearStatusTimerId);
         }
-    
+
         this.switchToBusyMode(button);
-    
+
         // Now process the sort, if any.
         for (ii = 0; ii < configObj.length; ii += 1) {
             if ('sort' === configObj[ii].command) {
                 sortCommandConfig = configObj[ii];
             }
         }
-    
+
         if (undefined === sortCommandConfig) {
             // No sort, just a change to the row order.
             // This is quick, and to avoid confusion, do not set a status message.
@@ -2391,11 +2391,11 @@
             retrievers = [];
         } else {
             this.setStatus('[Retrieving data...]');
-    
+
             if (this.isDebug) {
                 this.debug('\nFetch queue data retrievers need.');
             }
-    
+
             // Before determining the retrievers involved in this sort, we need to
             // do something else first.  If it turns out some data points for some
             // movies could not be retrieved from the queue itself, they'll need to
@@ -2420,7 +2420,7 @@
             // that data to the retriever regardless of what fields are being
             // sorted on) and some set operation to merge the queue fields all
             // retrievers need to operate with the actual fields being sorted on.)
-    
+
             // Determine the retrievers involved in this sort.
             retrievers = [];
             for (ii = 0; ii < this.allNonQueueRetrievers.length; ii += 1) {
@@ -2428,27 +2428,27 @@
                     retrievers.push(this.allNonQueueRetrievers[ii]);
                 }
             }
-    
+
             // Always retrieve all queue fields per #2 above.
             fieldsToRetrieve = this.allQueueFieldsArray;
         }
-    
+
         callback = function (data) {
             this.retrieveQueueDataCallback(data, configObj, retrievers);
         };
-    
+
         // Now retrieve queue data.
         // Note: passing undefined for "cachedData" and "checkin" args as
         // queue should not use it.
         this.retrieveData(fieldsToRetrieve, undefined, undefined, callback);
     };
-    
+
     QueueManager.prototype.doToggleConfig = function () {
         var nqsElt = document.getElementById('netflix-queue-sorter');
-    
+
         nqsElt.setAttribute('data-view', nqsElt.getAttribute('data-view') === 'sorter' ? 'config' : 'sorter');
     };
-    
+
     QueueManager.prototype.doCancelConfig = function () {
         var useCacheElt = document.getElementById('use-cache'),
             showInfoIconsElt = document.getElementById('show-info-icons'),
@@ -2462,7 +2462,7 @@
             instantDetailPageUrlElt = document.getElementById('detail-page-url-' + Constants.QUEUE_INSTANT),
             userButtonConfigElt = document.getElementById('user-button-config'),
             userButtonConfigValue;
-    
+
         // Restore option values.
         useCacheElt.checked = this.getCacheValue('use-cache', Constants.DEFAULTS['use-cache']);
         showInfoIconsElt.checked = this.getCacheValue('show-info-icons', Constants.DEFAULTS['show-info-icons']);
@@ -2479,14 +2479,14 @@
             userButtonConfigValue = this.getDefaultButtonConfig();
         }
         userButtonConfigElt.value = JSON.stringify(userButtonConfigValue);
-    
+
         // Trigger event handlers.
         this.doUpdateUseCacheSubOptions();
-    
+
         // Back to sorter view.
         this.doToggleConfig();
     };
-    
+
     QueueManager.prototype.doSaveConfig = function () {
         var useCacheElt = document.getElementById('use-cache'),
             showInfoIconsElt = document.getElementById('show-info-icons'),
@@ -2503,7 +2503,7 @@
             elts,
             ee,
             sortMarker = this.trim(slowSortIndicatorTextElt.value);
-    
+
         // Validate inputs.
         try {
             userButtonConfigValue = JSON.parse(userButtonConfigElt.value);
@@ -2515,7 +2515,7 @@
             userButtonConfigValue = Constants.DEFAULTS['user-button-config'];
         }
         userButtonConfigValueChanged = JSON.stringify(userButtonConfigValue) !== JSON.stringify(this.getCacheValue('user-button-config', Constants.DEFAULTS['user-button-config']));
-    
+
         // Save option values.
         this.setCacheValue('use-cache', useCacheElt.checked);
         this.setCacheValue('show-info-icons', showInfoIconsElt.checked);
@@ -2527,12 +2527,12 @@
         this.setCacheValue('detail-page-url-' + Constants.QUEUE_DVD, this.trim(dvdDetailPageUrlElt.value));
         this.setCacheValue('detail-page-url-' + Constants.QUEUE_INSTANT, this.trim(instantDetailPageUrlElt.value));
         this.setCacheValue('user-button-config', userButtonConfigValue);
-    
+
         // Clear cache if no longer needed.
         if (!useCacheElt.checked) {
             this.doClearCache();
         }
-    
+
         // Toggle movie info icons.
         elts = document.getElementsByClassName('nqs-movie-info-icon');
         if (showInfoIconsElt.checked) {
@@ -2548,19 +2548,19 @@
                 elts[ee].style.display = 'none';
             }
         }
-    
+
         // Toggle slow sort indicators.
         elts = document.getElementsByClassName('slow-marker');
         for (ee = 0; ee < elts.length; ee += 1) {
             elts[ee].innerHTML = sortMarker ? ' ' + sortMarker : '';
         }
-    
+
         // Apply debug mode.
         this.isDebug = debugModeElt.checked;
         for (ee = 0; ee < this.allNonQueueRetrievers.length; ee += 1) {
             this.allNonQueueRetrievers[ee].isDebug = debugModeElt.checked;
         }
-    
+
         // Back to sorter view.
         this.doToggleConfig();
         if (userButtonConfigValueChanged) {
@@ -2569,7 +2569,7 @@
             window.location.reload();
         }
     };
-    
+
     QueueManager.prototype.doResetConfig = function () {
         var useCacheElt = document.getElementById('use-cache'),
             showInfoIconsElt = document.getElementById('show-info-icons'),
@@ -2583,7 +2583,7 @@
             instantDetailPageUrlElt = document.getElementById('detail-page-url-' + Constants.QUEUE_INSTANT),
             userButtonConfigElt = document.getElementById('user-button-config'),
             userButtonConfigValue;
-    
+
         // Reset option values.
         useCacheElt.checked = Constants.DEFAULTS['use-cache'];
         showInfoIconsElt.checked = Constants.DEFAULTS['show-info-icons'];
@@ -2600,26 +2600,26 @@
             userButtonConfigValue = this.getDefaultButtonConfig();
         }
         userButtonConfigElt.value = JSON.stringify(userButtonConfigValue);
-    
+
         // Trigger event handlers.
         this.doUpdateUseCacheSubOptions();
     };
-    
+
     QueueManager.prototype.doClearCache = function () {
         // Give click-received indication.
         document.getElementById('clear-cache').setAttribute('disabled', 'disabled');
-    
+
         this.deleteCacheValue('movie-data-' + Constants.QUEUE_DVD);
         this.deleteCacheValue('movie-data-' + Constants.QUEUE_INSTANT);
         this.cachedData = {};
     };
-    
+
     QueueManager.prototype.doUpdateUseCacheSubOptions = function () {
         var useCacheElt = document.getElementById('use-cache'),
             showInfoIconsElt = document.getElementById('show-info-icons'),
             forceRefreshElt = document.getElementById('force-refresh'),
             clearCacheElt = document.getElementById('clear-cache');
-    
+
         if (useCacheElt.checked) {
             showInfoIconsElt.removeAttribute('disabled');
             forceRefreshElt.removeAttribute('disabled');
@@ -2630,32 +2630,32 @@
             clearCacheElt.setAttribute('disabled', 'disabled');
         }
     };
-    
+
     QueueManager.prototype.doUpdateSlowSortIndicatorOption = function () {
         var slowSortIndicatorElt = document.getElementById('slow-sort-indicator'),
             slowSortIndicatorTextElt = document.getElementById('slow-sort-indicator-text');
-    
+
         slowSortIndicatorElt.checked = this.trim(slowSortIndicatorTextElt.value);
     };
-    
+
     QueueManager.prototype.doUpdateSlowSortIndicatorText = function () {
         var slowSortIndicatorTextElt = document.getElementById('slow-sort-indicator-text');
-    
+
         slowSortIndicatorTextElt.value = '';
     };
-    
+
     QueueManager.prototype.doCancelSort = function () {
         var self = this;
-    
+
         this.cancelled = true;
         this.switchToNoMoreCancelMode();
         this.setStatus('[Cancelling...]');
-    
+
         // Now wait for all retrievers to finish.
         setTimeout(function () {
             self.switchToUserMode();
             self.setStatus('[Cancelled.]');
-    
+
             // Clear status message after a few seconds.
             // Note: to avoid a race condition where user starts and cancels another
             // sort before the timer runs out, we're saving the timer ID so that we
@@ -2666,7 +2666,7 @@
             }, 2000);
         }, 2 * Retriever.XHR_DELAY);
     };
-    
+
     // Reverts back to the queue order before the last sort.
     QueueManager.prototype.doUndoSort = function () {
         var trElts,
@@ -2674,11 +2674,11 @@
             newData = [],
             id,
             ee;
-    
+
         this.switchToBusyMode();
-    
+
         origOrder = this.getCacheValue('undo-order-' + this.queueId);
-    
+
         // In order to call this.commitSort, we need an array of objects each
         // containing a single "order" property representing the original order.
         trElts = this.getListTrElts();
@@ -2686,24 +2686,24 @@
             id = this.extractMovieId(trElts[ee]);
             newData.push({ order: ee + 1, newOrder: origOrder[id] });
         }
-    
+
         // Now sort by newOrder to restore the previous order.
         newData = newData.sort(function (a, b) {
             return a.newOrder - b.newOrder;
         });
-    
+
         // Also we need to make sure the row filter is ignored.
         this.applyToSelectedRowsOnly(false);
-    
+
         this.commitSort(newData);
     };
-    
+
     // Makes sure button config is correct.
     QueueManager.prototype.assertCorrectButtonConfig = function (config) {
         var ok = true,
             ii,
             num;
-    
+
         if (undefined !== config.id &&
                 undefined !== config.text &&
                 undefined !== config.title &&
@@ -2726,12 +2726,12 @@
         } else {
             ok = false;
         }
-    
+
         if (!ok) {
             throw 'Button config incorrect: ' + JSON.stringify(config);
         }
     };
-    
+
     QueueManager.prototype.getDefaultButtonConfig = function () {
         return [
             // Config must be of the form:
@@ -2894,7 +2894,7 @@
     */
         ];
     };
-    
+
     QueueManager.prototype.loadButtonConfig = function () {
         var defaultButtonConfig = this.getDefaultButtonConfig(),
             userButtonConfig,
@@ -2903,25 +2903,25 @@
             config = [],
             self = this,
             ii;
-    
+
         // Note: there cannot be one button config containing everything, as that
         // would make it harder to make new canned buttons show up.  So, keep
         // canned and default buttons separate.  And add button order.
-    
+
         // Get user-defined buttons.
         userButtonConfig = this.getCacheValue('user-button-config', Constants.DEFAULTS['user-button-config']);
-    
+
         // Get user-defined button visibility and/or ordering.
         // Note: invisible buttons have order -1; new buttons do not have an order
         // so they can be detected as new, and shown.
         buttonOrder = this.getCacheValue('user-button-display-order-' + this.queueId, []);
-    
+
         function assertCorrectButtonConfig(config) {
             for (ii = 0; ii < config.length; ii += 1) {
                 self.assertCorrectButtonConfig(config[ii]);
             }
         }
-    
+
         function addToLookup(config) {
             for (ii = 0; ii < config.length; ii += 1) {
                 if (undefined !== lookup[config[ii].id]) {
@@ -2931,15 +2931,15 @@
                 lookup[config[ii].id] = config[ii];
             }
         }
-    
+
         // Do a sanity test on the config objects.
         assertCorrectButtonConfig(defaultButtonConfig);
         assertCorrectButtonConfig(userButtonConfig);
-    
+
         // Create lookup.
         addToLookup(defaultButtonConfig);
         addToLookup(userButtonConfig);
-    
+
         // Create the real config.
         if (undefined === buttonOrder || 0 === buttonOrder.length) {
             // User never customized buttons; use default buttons.
@@ -2956,10 +2956,10 @@
                 config.push(lookup[buttonOrder[ii]]);
             }
         }
-    
+
         return config;
     };
-    
+
     QueueManager.prototype.getUiContainerCssTemplate = function () {
         return '' +
             // Ui container.
@@ -2978,15 +2978,15 @@
                 'margin: 0 auto;' +   // Fixes text-alignment in Opera.
             '}';
     };
-    
+
     QueueManager.prototype.getUiCssTemplate = function () {
         var css = this.getUiContainerCssTemplate();
-    
+
         // Remove variable.
         css = this.substituteVars(css, {
             extraContainerStyle: ''
         });
-    
+
         return css +
             // Manage views.
             '#netflix-queue-sorter legend.config {' +
@@ -3001,12 +3001,12 @@
             '#netflix-queue-sorter[data-view="config"] #nqs-config {' +
                 'display: block;' +
             '}' +
-    
+
             // Controls go on the left.
             '#netflix-queue-sorter #nqs-controls {' +
                 'float: left;' +
             '}' +
-    
+
             '#netflix-queue-sorter .nqs-icon-link {' +
                 'width: 32px;' +
                 'height: 32px;' +
@@ -3043,7 +3043,7 @@
                 'position: absolute;' +
                 'bottom: 40px;' +
             '}' +
-    
+
             // Buttons go on the right.
             '#netflix-queue-sorter #nqs-buttons {' +
                 'float: right;' +
@@ -3085,7 +3085,7 @@
             '#netflix-queue-sorter input#nqs-use-sort-limit-rows {' +
                 'vertical-align: middle;' +
             '}' +
-    
+
             // Config UI.
             '#nqs-config {' +
                 'display: none;' +   // Hidden initially.
@@ -3118,7 +3118,7 @@
                 'float: right;' +
                 'margin: 1em 0 0 0;' +
             '}' +
-    
+
             // Movie info icon, outside of #netflix-queue-sorter.
             '.nqs-movie-info-icon {' +
                 'float: right;' +
@@ -3129,25 +3129,25 @@
                 'display: block;' +
                 'cursor: pointer;' +
                 // Make sure icon is "above" Netflix drag trigger.
-                'z-index: 10000;' +
+                'z-index: 100;' +
                 'position: relative;' +
             '}' +
-    
+
             // Don't show info icon on deleted rows.
             '[data-deleted="1"] .nqs-movie-info-icon {' +
                 'display: none;' +
             '}';
     };
-    
+
     QueueManager.prototype.getUiUnsupportedCssTemplate = function () {
         var css = this.getUiContainerCssTemplate();
-    
+
         // Add extra style.   // TODO: use CSS class
         return this.substituteVars(css, {
             extraContainerStyle: 'text-align: center;'
         });
     };
-    
+
     QueueManager.prototype.getUiHtmlTemplate = function () {
         var useCache = this.getCacheValue('use-cache', Constants.DEFAULTS['use-cache']),
             showInfoIcons = this.getCacheValue('show-info-icons', Constants.DEFAULTS['show-info-icons']),
@@ -3159,15 +3159,15 @@
             dvdDetailPageUrl = this.getCacheValue('detail-page-url-' + Constants.QUEUE_DVD, Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_DVD]),
             instantDetailPageUrl = this.getCacheValue('detail-page-url-' + Constants.QUEUE_INSTANT, Constants.DEFAULTS['detail-page-url-' + Constants.QUEUE_INSTANT]),
             userButtonConfig = this.getCacheValue('user-button-config', Constants.DEFAULTS['user-button-config']);
-    
+
         if (!userButtonConfig || 0 === userButtonConfig.length) {
             userButtonConfig = this.getDefaultButtonConfig();
         }
-    
+
         return '' +
             '<fieldset id="netflix-queue-sorter" data-view="sorter">' +
                 '<legend align="center">Netflix Queue Sorter</legend>' +
-                '<legend class="config" align="center">Configure Netflix Queue Sorter v2.100</legend>' +
+                '<legend class="config" align="center">Configure Netflix Queue Sorter v2.101</legend>' +
                 '<div id="nqs-controls">' +
                     // JSLint does not like these javascript hrefs (true, they do
                     // not follow the semantic layered markup rules), but at least
@@ -3190,15 +3190,15 @@
                     '</div>' +
                 '</div>' +
                 '<div id="nqs-config">' +   // TODO: NOW: should be <form>?
-    
+
     // TODO: FUTURE: add option for preferred format (HD, DVD, Blue-ray) for
     //       DVD queue as details page could have different values for each
     //       format (e.g. length).
-    
+
     // TODO: NOW: add options for custom sort orders for those buttons that use them.
-    
+
     // TODO: NOW: add options to managing button display order and visibility
-    
+
                     '<label for="use-cache" title="If unchecked, out-of-date movie data will be avoided, browser memory consumption will decrease and sorting speed may decrease, but no info icons will be shown">' +
                         '<input type="checkbox" id="use-cache"' + (useCache ? ' checked="checked"' : '') + '>' +
                         'Remember retrieved movie info' +
@@ -3250,21 +3250,21 @@
                 '</div>' +
             '</fieldset>';
     };
-    
+
     QueueManager.prototype.getUiUnsupportedHtmlTemplate = function () {
         // TODO: FUTURE: add IE here once it's supported.
         return '' +
             '<fieldset id="netflix-queue-sorter">' +
-                '<legend align="center">Netflix Queue Sorter v2.100</legend>' +
+                '<legend align="center">Netflix Queue Sorter v2.101</legend>' +
                 'Your browser is not supported.  Please use the latest ' +
                 'version of Chrome, Firefox, Opera or Safari.' +
             '</fieldset>';
     };
-    
+
     QueueManager.prototype.getButtonHtmlTemplate = function () {
         return '<button title="{title}" nqs-config="{config}">{text}{marker}</button>';
     };
-    
+
     QueueManager.prototype.getMovieInfoHtmlTemplate = function () {
         // TODO: FUTURE: improve presentation; use click rather than hover?
         // TODO: PERFORMANCE: using a template for something this simple is
@@ -3272,27 +3272,27 @@
         //       DOM API.
         return '<span class="nqs-movie-info-icon" title="{title}"></span>';
     };
-    
+
     QueueManager.prototype.htmlEntityEncode = function (str) {
         var p = document.createElement('div'),
             c = document.createElement('div');
-    
+
         c.setAttribute('a', str);
         p.appendChild(c);
-    
+
         return p.innerHTML.match(/a=['"](.+)['"]/)[1];
     };
-    
+
     QueueManager.prototype.getUpdateButtonText = function () {
         // Movies.n.c uses value, but www.n.c uses alt.
         return this.updateQueueButton.value || this.updateQueueButton.getAttribute('alt');
     };
-    
+
     QueueManager.prototype.couldBeSlow = function (config) {
         var ii,
             jj,
             result = false;
-    
+
         for (ii = 0; ii < config.length; ii += 1) {
             if (undefined !== config[ii].fields) {
                 for (jj = 0; jj < config[ii].fields.length; jj += 1) {
@@ -3304,10 +3304,10 @@
                 }
             }
         }
-    
+
         return result;
     };
-    
+
     QueueManager.prototype.showUi = function () {
         var cssTemplate,
             htmlTemplate,
@@ -3340,7 +3340,7 @@
             id,
             ii,
             jj;
-    
+
         // Get a reference to the Netflix update queue button before adding
         // additional HTML that would make this more inefficient to do later.
         this.updateQueueButton = document.getElementById('MainQueueForm'
@@ -3348,10 +3348,12 @@
         if (this.isDebug) {
             this.debug('showUi: update button: ' + this.getUpdateButtonText());
         }
-    
+
         // The latest FF,Safari,Chrome,Opera all have a native JSON object.
         // Any other browser is not supported.
-        if (!window.JSON) {
+        // Note: !window.JSON does not work in Firefox 25!
+        //if (!window.JSON) {
+        if ('undefined' === typeof JSON) {
             cssTemplate = this.getUiUnsupportedCssTemplate();
             htmlTemplate = this.getUiUnsupportedHtmlTemplate();
         } else {
@@ -3359,7 +3361,7 @@
             htmlTemplate = this.getUiHtmlTemplate();
             config = this.loadButtonConfig();
             buttonTemplate = this.getButtonHtmlTemplate();
-    
+
             buttonsHtml = '';
             for (ii = 0; ii < config.length; ii += 1) {
                 // Only add button if it's defined for the current queue.
@@ -3376,38 +3378,38 @@
                     }
                 }
             }
-    
+
             htmlTemplate = this.substituteVars(htmlTemplate, {
                 buttons: buttonsHtml
             });
         }
-    
+
         // Add CSS.
         headElt = document.getElementsByTagName('head')[0];
         styleElt = document.createElement('style');
         styleElt.setAttribute('type', 'text/css');
         styleElt.innerHTML = cssTemplate;
         headElt.appendChild(styleElt);
-    
+
         if (this.isDebug) {
             this.debug('showUi: CSS added');
         }
-    
+
         // Add HTML.
         queueForm = document.getElementById('MainQueueForm');
         targetContainer = queueForm.getElementsByTagName('h2')[0];
-    
+
         // Make our div extend to the right edge of the Update button.
         targetContainer.style.paddingRight = '0.5em';
-    
+
         myContainer = document.createElement('div');
         myContainer.innerHTML = htmlTemplate;
         targetContainer.appendChild(myContainer);
-    
+
         if (this.isDebug) {
             this.debug('showUi: HTML added');
         }
-    
+
         // Hook up user inputs.
         // Note: always search within our container to reduce conflict with
         // Netflix-defined elements.
@@ -3452,7 +3454,7 @@
         updateSlowSortIndicatorTextEventHandler = function (event) {
             self.doUpdateSlowSortIndicatorText.call(self, event);
         };
-    
+
         elts = myContainer.getElementsByClassName('nqs-icon-link');
         for (ee = 0; ee < elts.length; ee += 1) {
             id = elts[ee].getAttribute('id');
@@ -3479,7 +3481,7 @@
                 throw 'Unexpected icon-link ID: ' + id;
             }
         }
-    
+
         // Sort and config buttons.
         elts = myContainer.getElementsByTagName('button');
         for (ee = 0; ee < elts.length; ee += 1) {
@@ -3505,18 +3507,18 @@
                 this.customAddEventListener(elts[ee], 'click', sortButtonEventHandler);
             }
         }
-    
+
         // Use Cache config option.
         this.customAddEventListener(document.getElementById('use-cache'), 'click', updateUseCacheSubOptionsEventHandler);
-    
+
         // Slow Sort Indicator option.
         this.customAddEventListener(document.getElementById('slow-sort-indicator'), 'change', updateSlowSortIndicatorTextEventHandler);
         this.customAddEventListener(document.getElementById('slow-sort-indicator-text'), 'change', updateSlowSortIndicatorOptionEventHandler);
-    
+
         // Set previously saved min/max values, if any.
         this.minSelectedRowIndex(this.getCacheValue('last-min-row-' + this.queueId));
         this.maxSelectedRowIndex(this.getCacheValue('last-max-row-' + this.queueId));
-    
+
         rowFilterInputEventHandler = function () {
             self.applyToSelectedRowsOnly(true);
         };
@@ -3527,11 +3529,11 @@
                 this.customAddEventListener(elts[ee], 'change', rowFilterInputEventHandler);
             }
         }
-    
+
         // Save reference to status element.
         this.statusElt = document.getElementById('nqs-status');
     };
-    
+
     QueueManager.prototype.showCachedData = function () {
         var key,
             rr,
@@ -3549,15 +3551,15 @@
             props,
             val,
             infoTemplate;
-    
+
         // Note: init needs to be fast so the manager tasks of removing obsolete
         // data or storing massaged data is deferred until the user actually
         // performs a sort.
-    
+
         // Get movie data for this queue.  (Keep dvd and instant data separate.)
         key = 'movie-data-' + this.queueId;
         this.cachedData = this.getCacheValue(key, {});
-    
+
         // Allow each retriever to massage the data before it is displayed (e.g.
         // to clear an upcoming release date if that data already passed.)
         // Note: there's no XHR going on here.
@@ -3566,13 +3568,13 @@
         for (rr = 0; rr < this.allNonQueueRetrievers.length; rr += 1) {
             this.allNonQueueRetrievers[rr].initCachedData(this.cachedData);
         }
-    
+
         // Create an alphabetically sorted string of extra info.
         infoFields = [];
         displayLookup = {};
         function addInfoFields(fieldsConfig) {
             var pp;
-    
+
             for (pp in fieldsConfig) {
                 if (fieldsConfig.hasOwnProperty(pp)) {
                     config = fieldsConfig[pp];
@@ -3594,7 +3596,7 @@
         }
         // Sort the array.
         infoFields = infoFields.sort();
-    
+
         // Now add the data inline into the queue.
         divider = ' - ';
         infoTemplate = this.getMovieInfoHtmlTemplate();
@@ -3603,7 +3605,7 @@
             id = this.extractMovieId(trElts[ee]);
             container = trElts[ee].getElementsByClassName('tt')[0];
             titleElt = container.getElementsByClassName('title')[0];
-    
+
             props = '';
             for (ff = 0; ff < infoFields.length; ff += 1) {
                 config = this.allDataPointConfig[infoFields[ff]];
@@ -3626,21 +3628,21 @@
                     }
                 }
             }
-    
+
             if (props !== '') {
                 // Remove last divider.
                 props = props.substring(0, props.length - divider.length);
-    
+
                 // Because tooltips appear below the line the mouse is pointing at,
                 // include the movie title.
                 props = this[this.allDataPointConfig.title.extractFn](trElts[ee]) +
                         ': ' + props;
-    
+
                 div = document.createElement('div');
                 div.innerHTML = this.substituteVars(infoTemplate, {
                     title: props
                 });
-    
+
                 container.replaceChild(div, titleElt);
                 container.appendChild(titleElt);
                 // This makes titleElt move up a few px so it's no longer centered;
@@ -3650,14 +3652,14 @@
             }
         }
     };
-    
+
     QueueManager.prototype.checkForUndo = function () {
         var showUndo,
             undoElt,
             trElts,
             rr,
             origOrder = this.getCacheValue('undo-order-' + this.queueId);
-    
+
         if (origOrder) {
             // Undo is possible only if all movies in the queue are present in the
             // undo-order.
@@ -3671,19 +3673,19 @@
                     break;
                 }
             }
-    
+
             if (showUndo) {
                 undoElt = document.getElementById('nqs-icon-undo');
                 undoElt.style.display = 'block';
             }
         }
     };
-    
+
     QueueManager.prototype.getQueueId = function () {
         var tt,
             id,
             tabs;
-    
+
         tabs = document.getElementById('qtabs');
         if (tabs) {
             tabs = tabs.getElementsByTagName('li');
@@ -3717,7 +3719,7 @@
                 // TODO: NOW: and even if we get it, button config is all based on
                 //            dvd... for now, use 'dvd' and avoid updating cache.
                 id = Constants.QUEUE_DVD;
-    
+
                 // Per TODOs above, avoid updating cache.
                 this.disableCache = true;
                 // Also apply to all retrievers.
@@ -3726,25 +3728,25 @@
                 }
             }
         }
-    
+
         if (this.isDebug) {
             this.debug('getQueueId: ' + id);
         }
-    
+
         // Needs to be done only once, so make function always return result.
         QueueManager.prototype.getQueueId = function () {
             return id;
         };
-    
+
         return id;
     };
-    
+
     // Never show the Netflix tip that updating the priority of every item in the
     // queue is not necessary.  Show the "Queue has been reordered." msg instead.
     QueueManager.prototype.hideQueueReorderingTip = function () {
         var elt,
             elts = document.getElementsByClassName('svfmsg-l');
-    
+
         if (elts.length > 0) {
             elt = document.createElement('div');
             elt.setAttribute('class', 'svfmsg-s');
@@ -3752,16 +3754,16 @@
             elts[0].parentNode.replaceChild(elt, elts[0]);
         }
     };
-    
+
     // Makes sure data points across all retrievers are unique in key and value.
     QueueManager.prototype.assertUniqueDataPoints = function () {
         var idsSeen = {},
             stringsSeen = {},
             rr;
-    
+
         function checkFields(fieldsConfig) {
             var ff;
-    
+
             for (ff in fieldsConfig) {
                 if (fieldsConfig.hasOwnProperty(ff)) {
                     // Make sure all data points are unique.
@@ -3777,25 +3779,25 @@
                 }
             }
         }
-    
+
         // Include the queue fields in this check.
         checkFields(this.getAllDataPointConfig());
-    
+
         for (rr = 0; rr < this.allNonQueueRetrievers.length; rr += 1) {
             checkFields(this.allNonQueueRetrievers[rr].getAllDataPointConfig());
         }
     };
-    
+
     QueueManager.prototype.checkForUpdates = function () {
         function versionCheckHandler(response) {
             var upgradeElt,
-                currentVersion = '2.100',   // Must be String for split usage below.
+                currentVersion = '2.101',   // Must be String for split usage below.
                 latestVersion,
                 result = /@version\s+([\d\.]+)/.exec(response.responseText);
-    
+
             if (result) {
                 latestVersion = result[1];   // Keep as String.
-    
+
                 // Must compare numbers w/o decimals, otherwise 2.10 < 2.9.
                 // Also make sure 3.0 > 2.10, so don't just strip the comma.
                 // Convert to objects to make logic more readable.
@@ -3809,7 +3811,7 @@
                     major: Number(latestVersion[0]),
                     minor: Number(latestVersion[1])
                 };
-    
+
                 if (latestVersion.major > currentVersion.major ||
                         (latestVersion.major === currentVersion.major &&
                         latestVersion.minor > currentVersion.minor)) {
@@ -3824,7 +3826,7 @@
                 throw 'Parse error: ' + JSON.stringify(response);
             }
         }
-    
+
         // TODO: FUTURE: Chrome and Opera do not support cross-domain XHRs.
         window.GM_xmlhttpRequest({
             method: 'GET',
@@ -3833,40 +3835,40 @@
             onerror: versionCheckHandler   // Only added for development mode.
         });
     };
-    
+
     QueueManager.prototype.init = function () {
         // Init config options first, so that isDebug is set.
         this.initConfigOptions();
         if (this.isDebug) {
             this.debug('init: initConfigOptions');
         }
-    
+
         // Validate the data point config is correct.
         if (this.isDebug) {
             this.debug('init: assertUniqueDataPoints');
         }
         this.assertUniqueDataPoints();
-    
+
         if (this.isDebug) {
             this.debug('init: hideQueueReorderingTip');
         }
         this.hideQueueReorderingTip();
-    
+
         if (this.isDebug) {
             this.debug('init: createSortIndependentLookups');
         }
         this.createSortIndependentLookups();
-    
+
         if (this.isDebug) {
             this.debug('init: showUi');
         }
         this.showUi();
-    
+
         if (this.isDebug) {
             this.debug('init: checkForUndo');
         }
         this.checkForUndo();
-    
+
         // TODO: NOW: get rid of this
         if (true === this.getCacheValue('reload-trigger')) {
             this.deleteCacheValue('reload-trigger');
@@ -3879,30 +3881,30 @@
                 this.setStatus('[If the order didn\'t change, <a href="javascript:window.location.reload()">reload</a> the page.]');
             }
         }
-    
+
         if (this.getCacheValue('show-info-icons', Constants.DEFAULTS['show-info-icons'])) {
             if (this.isDebug) {
                 this.debug('init: showCachedData');
             }
             this.showCachedData();
         }
-    
+
         if (this.isDebug) {
             this.debug('init: checkForUpdates');
         }
         this.checkForUpdates();
-    
+
         if (this.isDebug) {
             this.debug('init complete');
         }
-    
+
         // Now wait for the user to press a button.
     };
-    
-    
-    
+
+
+
     var manager = new QueueManager();
     manager.init();
 }());
-    
+
 ///////////////////////////////////////////////////////////////////////////////
