@@ -3,18 +3,18 @@
 // This is a Greasemonkey user script.
 //
 // Netflix Queue Sorter
-// Version 2.101 2014-01-04
+// Version 2.102 2014-08-04
 // Coded by Maarten van Egmond.  See namespace URL below for contact info.
 // Released under the MIT license: http://opensource.org/licenses/MIT
 //
 // ==UserScript==
 // @name        Netflix Queue Sorter
-// @version     2.101
+// @version     2.102
 // @author      Maarten
 // @namespace   https://userscripts.org/users/64961
 // @updateURL   https://userscripts.org/scripts/source/35183.meta.js
 // @downloadURL https://userscripts.org/scripts/source/35183.user.js
-// @description v2.101 for Chrome, Firefox, Opera, Safari: shuffle, reverse, and sort your DVD Queue or Instant Queue by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
+// @description v2.102 for Chrome, Firefox, Opera, Safari: shuffle, reverse, and sort your DVD Queue or Instant Queue by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
 // @match *://*.netflix.ca/Queue*
 // @match *://*.netflix.com/Queue*
 // @match *://*.netflix.ca/MyList*
@@ -686,7 +686,13 @@
         // http://www.netflix.com/Movie/70077737?trkid=226871
         var rating,
             elts = dom.getElementsByClassName('rating'),
+            elts2 = dom.querySelectorAll('#ratingInfo div span'),
             txt = '';
+
+        // DVD queue was changed to use #ratingInfo.
+        if (elts.length === 0) {
+            elts = elts2;
+        }
 
         // Instant accounts have 2 class="rating" elements.
         // DVD account have 2 only for rated movies.  Not-yet-rated movies only
@@ -887,8 +893,14 @@
             elt,
             txt;
 
-        elt = dom.getElementsByClassName('starbar-avg')[0];
-        txt = elt.getElementsByTagName('p')[0].innerHTML;
+        elt = dom.getElementsByClassName('starbar-avg');
+        if (elt.length === 0) {
+            // DVD queue was changed to use #ratingInfo.
+            txt = dom.querySelectorAll('#ratingInfo div')[1].innerHTML;
+        } else {
+            elt = elt[0];
+            txt = elt.getElementsByTagName('p')[0].innerHTML;
+        }
 
         if (/([\d\,]+)/.test(txt)) {
             txt = RegExp.$1;
@@ -3167,7 +3179,7 @@
         return '' +
             '<fieldset id="netflix-queue-sorter" data-view="sorter">' +
                 '<legend align="center">Netflix Queue Sorter</legend>' +
-                '<legend class="config" align="center">Configure Netflix Queue Sorter v2.101</legend>' +
+                '<legend class="config" align="center">Configure Netflix Queue Sorter v2.102</legend>' +
                 '<div id="nqs-controls">' +
                     // JSLint does not like these javascript hrefs (true, they do
                     // not follow the semantic layered markup rules), but at least
@@ -3255,7 +3267,7 @@
         // TODO: FUTURE: add IE here once it's supported.
         return '' +
             '<fieldset id="netflix-queue-sorter">' +
-                '<legend align="center">Netflix Queue Sorter v2.101</legend>' +
+                '<legend align="center">Netflix Queue Sorter v2.102</legend>' +
                 'Your browser is not supported.  Please use the latest ' +
                 'version of Chrome, Firefox, Opera or Safari.' +
             '</fieldset>';
@@ -3791,7 +3803,7 @@
     QueueManager.prototype.checkForUpdates = function () {
         function versionCheckHandler(response) {
             var upgradeElt,
-                currentVersion = '2.101',   // Must be String for split usage below.
+                currentVersion = '2.102',   // Must be String for split usage below.
                 latestVersion,
                 result = /@version\s+([\d\.]+)/.exec(response.responseText);
 
