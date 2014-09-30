@@ -42,7 +42,7 @@ Available options
 -----------------
 
 | |
-| :- |:-
+| :--- |:---
 | Shuffle | Shuffles your queue into a random order. |
 | Reverse | Reverses the current list order. (Turns 1 through 100 into 100 through 1.) |
 | Sort by Title | Alphabetically sorts your queue by movie title. |
