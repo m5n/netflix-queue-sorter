@@ -8,13 +8,13 @@ Installation instructions
 -------------------------
 
 * Chrome (everything works except the "update available" indicator):
->* Note: [Starting in Chrome 21, it is more difficult to install extensions, apps, and user scripts from outside the Chrome Web Store](http://support.google.com/chrome_webstore/?p=crx_warning). Here's how to install the script:
->* (No add-on or extension installation required.)
->* Right-click on [this GitHub link to the script's raw source code](https://raw.githubusercontent.com/m5n/netflix-queue-sorter/master/netflix-queue-sorter.user.js) and select `Save Link As...` to save the script to a directory of your choice.
->* From the application menu, select `Tools > Extensions`.
->* Locate the script file on your computer and drag the file onto the Extensions page.
->* Click `Install`.
->* Manage your scripts via the `Window --> Tools -->Extensions` menu.
+    * Note: [Starting in Chrome 21, it is more difficult to install extensions, apps, and user scripts from outside the Chrome Web Store](http://support.google.com/chrome_webstore/?p=crx_warning). Here's how to install the script:
+    * (No add-on or extension installation required.)
+    * Right-click on [this GitHub link to the script's raw source code](https://raw.githubusercontent.com/m5n/netflix-queue-sorter/master/netflix-queue-sorter.user.js) and select `Save Link As...` to save the script to a directory of your choice.
+    * From the application menu, select `Tools > Extensions`.
+    * Locate the script file on your computer and drag the file onto the Extensions page.
+    * Click `Install`.
+    * Manage your scripts via the `Window --> Tools -->Extensions` menu.
 
 
 * Firefox:
