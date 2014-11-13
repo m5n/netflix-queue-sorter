@@ -41,8 +41,8 @@ Installation instructions
 Available options
 -----------------
 
-| |
-| :- |:-
+| Button | Description |
+| :-- |:-- |
 | Shuffle | Shuffles your queue into a random order. |
 | Reverse | Reverses the current list order. (Turns 1 through 100 into 100 through 1.) |
 | Sort by Title | Alphabetically sorts your queue by movie title. |
@@ -51,19 +51,13 @@ Available options
 | Sort by Average Rating | Sorts all movies by average rating from high to low. Use the Reverse button to sort from low to high rating. |
 | Sort by Genre | Alphabetically sorts your queue by genre (primary sort) and then by title (secondary sort). |
 | Sort by TV/Movies | Moves the Television genre above all movie genres (primary sort) and then sorts by title (secondary sort). |
-| Sort by Availability | Moves the most desirable movies to the top of your queue. (Makes sure you're one of the first to receive new or hard to get movies.) Does not change the order of all other movies in your queue.  
-|| The sort order for the DVD queue is: future releases, very long wait, long wait, short wait, unavailable, now.  
-|| The sort order for the instant queue is: limited availability on top, the rest below. |
+| Sort by Availability | Moves the most desirable movies to the top of your queue. (Makes sure you're one of the first to receive new or hard to get movies.) Does not change the order of all other movies in your queue.<br>The sort order for the DVD queue is: future releases, very long wait, long wait, short wait, unavailable, now.<br>The sort order for the instant queue is: limited availability on top, the rest below. |
 | Sort by Length | Sorts your queue by length from short to long. For series discs, the length of just the first episode is shown (because you might only have time to watch one episode). |
 | Sort by Year | Sorts your queue by year from high to low. |
-| Sort by Format | Moves hi-definition movies above standard-definition movies.  
-|| The sort order for the DVD queue is: Blu-ray above DVD.  
-|| The sort order for the instant queue is: HD above streaming.  
-|| (Note: due to recent Netflix changes, formats cannot be retrieved for some series discs.) |
+| Sort by Format | Moves hi-definition movies above standard-definition movies.<br>The sort order for the DVD queue is: Blu-ray above DVD.<br>The sort order for the instant queue is: HD above streaming.<br>(Note: due to recent Netflix changes, formats cannot be retrieved for some series discs.) |
 | Sort by Language | Alphabetically sorts your queue by language. |
 | Sort by Date Added | Sorts your queue by the date you added movies to the queue (most recently added on top). (DVD Queue only.) |
-| Sort by #Reviews | Sorts your queue by the number of user reviews from high to low.  
-|| (Note: due to Netflix loading this data after the movie details page loads this data is no longer available, so this sort is hidden for now.) |
+| Sort by #Reviews | Sorts your queue by the number of user reviews from high to low.<br>(Note: due to Netflix loading this data after the movie details page loads this data is no longer available, so this sort is hidden for now.) |
 
 
 Known Issues
