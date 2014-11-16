@@ -4,6 +4,13 @@ Netflix Queue Sorter
 Greasemonkey script for Chrome, Firefox, Opera, Safari: shuffle, reverse, and sort your DVD Queue or Instant Queue by star rating, average rating, title, length, year, genre, format, availability, playability, language, etc.
 
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/m5n/netflix-queue-sorter/master/img/ui.png" alt="Netflix Queue Sorter UI"/>
+  <br>
+  <img src="https://raw.githubusercontent.com/m5n/netflix-queue-sorter/master/img/options.png" alt="Netflix Queue Sorter Options"/>
+</p>
+
+
 Installation instructions
 -------------------------
 
