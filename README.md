@@ -76,7 +76,7 @@ Known Issues
 * Please make sure you've uninstalled any and all old version(s) of this script via `Tools-->Greasemonkey-->Manage User Scripts...`  
   Select Netflix Queue Sorter and press the Uninstall button.  
   Then, if you haven't already, install the latest version of this script.
-* Chrome an Opera do not support cross-domain XHRs, so the script is unable to determine if an update is available (it needs to contact userscripts.org for that).
+* Chrome and Opera do not support cross-domain XHRs, so the script is unable to determine if an update is available (it needs to contact userscripts.org for that).
 * For some series discs, Netflix reports "the" movie length as total running time of all individual discs rather than the length of each disc.
 
 
